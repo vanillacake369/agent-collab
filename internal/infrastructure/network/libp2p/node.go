@@ -288,3 +288,10 @@ func (n *Node) SubscribeProjectTopics(ctx context.Context) error {
 	}
 	return nil
 }
+
+// GetSubscription returns the subscription for a topic.
+func (n *Node) GetSubscription(topicName string) *pubsub.Subscription {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.subs[topicName]
+}
