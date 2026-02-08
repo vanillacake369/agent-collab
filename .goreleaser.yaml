@@ -167,23 +167,6 @@ release:
 
     **Full Changelog**: https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab/compare/{{ .PreviousTag }}...{{ .Tag }}
 
-# Homebrew formula
-brews:
-  - name: agent-collab
-    repository:
-      owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
-    homepage: "https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab"
-    description: "P2P-based distributed collaboration system for AI agents"
-    license: "MIT"
-    install: |
-      bin.install "agent-collab"
-    test: |
-      system "#{bin}/agent-collab", "version", "--short"
-    skip_upload: auto
-
 # DEB/RPM/APK packages
 nfpms:
   - id: packages
@@ -206,51 +189,6 @@ nfpms:
     scripts:
       postinstall: scripts/postinstall.sh
       preremove: scripts/preremove.sh
-
-# Docker images
-dockers:
-  - image_templates:
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:{{ .Version }}-amd64"
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:latest-amd64"
-    goarch: amd64
-    dockerfile: Dockerfile
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.title=agent-collab"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.source=https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-    skip_push: auto
-
-  - image_templates:
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:{{ .Version }}-arm64"
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:latest-arm64"
-    goarch: arm64
-    dockerfile: Dockerfile
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/arm64"
-      - "--label=org.opencontainers.image.title=agent-collab"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.source=https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-    skip_push: auto
-
-# Docker manifests (multi-arch)
-docker_manifests:
-  - name_template: "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:{{ .Version }}-amd64"
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:{{ .Version }}-arm64"
-    skip_push: auto
-  - name_template: "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:latest"
-    image_templates:
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:latest-amd64"
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:latest-arm64"
-    skip_push: auto
 
 # Source archive
 source:
