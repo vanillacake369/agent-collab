@@ -78,11 +78,22 @@ func SaveKeyPair(kp *KeyPair, path string) error {
 	return nil
 }
 
-// LoadKeyPair는 파일에서 키 쌍을 로드합니다.
+// LoadKeyPair loads a key pair from file with permission validation.
 func LoadKeyPair(path string) (*KeyPair, error) {
+	// Validate file permissions (should be 0600 or stricter)
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat key file: %w", err)
+	}
+
+	mode := info.Mode().Perm()
+	if mode&0077 != 0 {
+		return nil, fmt.Errorf("insecure key file permissions: %o (should be 0600 or stricter)", mode)
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("파일 읽기 실패: %w", err)
+		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
 	var stored StoredKey
