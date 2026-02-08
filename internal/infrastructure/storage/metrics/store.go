@@ -22,7 +22,7 @@ type Store struct {
 // NewStore creates a new metrics store.
 func NewStore(dataDir string) (*Store, error) {
 	metricsDir := filepath.Join(dataDir, "metrics")
-	if err := os.MkdirAll(metricsDir, 0755); err != nil {
+	if err := os.MkdirAll(metricsDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create metrics dir: %w", err)
 	}
 
@@ -60,7 +60,7 @@ func (s *Store) flush() error {
 	filename := fmt.Sprintf("usage_%s.jsonl", now.Format("2006-01-02"))
 	path := filepath.Join(s.dataDir, filename)
 
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to open metrics file: %w", err)
 	}
@@ -91,6 +91,7 @@ func (s *Store) LoadDay(date time.Time) ([]*token.UsageRecord, error) {
 	filename := fmt.Sprintf("usage_%s.jsonl", date.Format("2006-01-02"))
 	path := filepath.Join(s.dataDir, filename)
 
+	// #nosec G304 - path is constructed from s.dataDir (app data directory) and a date-based filename
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

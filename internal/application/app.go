@@ -181,6 +181,7 @@ func (a *App) LoadFromConfig(ctx context.Context) error {
 
 	// Load config
 	configPath := filepath.Join(a.config.DataDir, "config.json")
+	// #nosec G304 - configPath is constructed from app's DataDir, not user input
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("config not found (run 'init' first): %w", err)

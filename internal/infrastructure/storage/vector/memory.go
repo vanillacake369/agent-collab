@@ -37,7 +37,7 @@ func NewMemoryStore(dataDir string, dimension int) (*MemoryStore, error) {
 	}
 
 	vectorDir := filepath.Join(dataDir, "vectors")
-	if err := os.MkdirAll(vectorDir, 0755); err != nil {
+	if err := os.MkdirAll(vectorDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create vector dir: %w", err)
 	}
 
@@ -351,7 +351,7 @@ func (s *MemoryStore) persist() error {
 		if err != nil {
 			return fmt.Errorf("failed to marshal collection %s: %w", name, err)
 		}
-		if err := os.WriteFile(path, data, 0644); err != nil {
+		if err := os.WriteFile(path, data, 0600); err != nil {
 			return fmt.Errorf("failed to write collection %s: %w", name, err)
 		}
 	}
@@ -374,6 +374,7 @@ func (s *MemoryStore) load() error {
 		}
 
 		path := filepath.Join(s.dataDir, entry.Name())
+		// #nosec G304 - path is constructed from s.dataDir (app data directory) and validated entry names
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue

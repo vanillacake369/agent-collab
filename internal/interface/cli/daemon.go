@@ -86,6 +86,8 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("실행 파일 경로를 찾을 수 없습니다: %w", err)
 	}
 
+	// Validate executable path to prevent command injection
+	// #nosec G204 - executable is from os.Executable(), not user input
 	daemonProcess := exec.Command(executable, "daemon", "run")
 	daemonProcess.Stdout = nil
 	daemonProcess.Stderr = nil

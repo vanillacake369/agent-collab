@@ -96,6 +96,7 @@ func LoadKeyPair(path string) (*KeyPair, error) {
 		return nil, err
 	}
 
+	// #nosec G304 - path is validated through permission checks above and is user's key file
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)

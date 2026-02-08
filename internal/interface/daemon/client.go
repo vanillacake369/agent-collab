@@ -75,6 +75,7 @@ func (c *Client) IsRunning() bool {
 // GetPID returns the daemon PID if running.
 func (c *Client) GetPID() (int, error) {
 	pidFile := DefaultPIDFile()
+	// #nosec G304 - pidFile is from DefaultPIDFile() which returns a fixed path in user's home directory
 	data, err := os.ReadFile(pidFile)
 	if err != nil {
 		return 0, err
