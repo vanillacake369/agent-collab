@@ -95,10 +95,13 @@ func (l *SemanticLock) RenewWithTTL(ttl time.Duration) error {
 	return nil
 }
 
-// generateLockID는 락 ID를 생성합니다.
+// generateLockID generates a unique lock ID.
+// Panics if crypto/rand fails (should never happen in practice).
 func generateLockID() string {
 	bytes := make([]byte, 16)
-	rand.Read(bytes)
+	if _, err := rand.Read(bytes); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
 	return "lock-" + hex.EncodeToString(bytes)[:12]
 }
 

@@ -331,8 +331,11 @@ func (m *Manager) cleanupExpired() {
 }
 
 // generateNotificationID generates a unique notification ID.
+// Panics if crypto/rand fails (should never happen in practice).
 func generateNotificationID() string {
 	bytes := make([]byte, 8)
-	rand.Read(bytes)
+	if _, err := rand.Read(bytes); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
 	return "notif-" + hex.EncodeToString(bytes)
 }
