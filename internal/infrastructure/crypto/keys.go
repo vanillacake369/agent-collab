@@ -91,6 +91,11 @@ func LoadKeyPair(path string) (*KeyPair, error) {
 		return nil, fmt.Errorf("insecure key file permissions: %o (should be 0600 or stricter)", mode)
 	}
 
+	// On Unix systems, also verify file ownership
+	if err := validateFileOwnership(info); err != nil {
+		return nil, err
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
