@@ -41,45 +41,48 @@ func (vc *VectorClock) Get(nodeID string) uint64 {
 	return vc.clocks[nodeID]
 }
 
-// Merge는 다른 벡터 클럭과 병합합니다.
+// Merge merges another vector clock into this one.
+// Uses Clone() to avoid potential deadlock from nested locks.
 func (vc *VectorClock) Merge(other *VectorClock) {
+	// Clone first to avoid deadlock if two goroutines call Merge on each other
+	otherClocks := other.ToMap()
+
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
-	other.mu.RLock()
-	defer other.mu.RUnlock()
 
-	for nodeID, otherTime := range other.clocks {
+	for nodeID, otherTime := range otherClocks {
 		if otherTime > vc.clocks[nodeID] {
 			vc.clocks[nodeID] = otherTime
 		}
 	}
 }
 
-// Compare는 두 벡터 클럭을 비교합니다.
-// -1: vc < other (happens before)
-// 0: vc || other (concurrent)
-// 1: vc > other (happens after)
+// Compare compares two vector clocks.
+// Returns:
+//   -1: vc < other (happens before)
+//    0: vc || other (concurrent or equal)
+//    1: vc > other (happens after)
+// Uses ToMap() to avoid potential deadlock from nested locks.
 func (vc *VectorClock) Compare(other *VectorClock) int {
-	vc.mu.RLock()
-	defer vc.mu.RUnlock()
-	other.mu.RLock()
-	defer other.mu.RUnlock()
+	// Get snapshots to avoid deadlock
+	vcClocks := vc.ToMap()
+	otherClocks := other.ToMap()
 
 	less := false
 	greater := false
 
-	// 모든 노드 수집
+	// Collect all node IDs
 	allNodes := make(map[string]bool)
-	for k := range vc.clocks {
+	for k := range vcClocks {
 		allNodes[k] = true
 	}
-	for k := range other.clocks {
+	for k := range otherClocks {
 		allNodes[k] = true
 	}
 
 	for nodeID := range allNodes {
-		vcTime := vc.clocks[nodeID]
-		otherTime := other.clocks[nodeID]
+		vcTime := vcClocks[nodeID]
+		otherTime := otherClocks[nodeID]
 
 		if vcTime < otherTime {
 			less = true
