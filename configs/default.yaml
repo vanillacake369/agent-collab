@@ -1,0 +1,50 @@
+# agent-collab 기본 설정
+
+# 네트워크 설정
+network:
+  listen_port: 4001
+  # Bootstrap 노드 (비어있으면 공용 IPFS bootstrap 사용)
+  bootstrap: []
+  # NAT 통과 설정
+  nat:
+    enabled: true
+    upnp: true
+    hole_punching: true
+
+# Semantic Lock 설정
+lock:
+  default_ttl: 30s
+  max_ttl: 5m
+  heartbeat_interval: 10s
+  max_renewals: 100
+
+# 컨텍스트 동기화 설정
+context:
+  sync_interval: 5s
+  delta_batch_size: 100
+  max_delta_size: 1048576  # 1MB
+
+# 토큰 설정
+token:
+  daily_limit: 200000
+  warning_threshold: 0.8  # 80%에서 경고
+  # 비용 추정 (USD per 1K tokens)
+  cost_per_1k: 0.001
+
+# 임베딩 설정
+embedding:
+  model: "all-MiniLM-L6-v2"
+  batch_size: 32
+  cache_size: 10000
+
+# UI 설정
+ui:
+  theme: dark
+  refresh_interval: 1s
+  show_metrics: true
+
+# 로깅 설정
+logging:
+  level: info
+  format: text  # text or json
+  file: ""      # 비어있으면 stdout
