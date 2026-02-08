@@ -7,11 +7,11 @@ import (
 
 // RateLimiter implements a per-peer rate limiter using token bucket algorithm.
 type RateLimiter struct {
-	mu       sync.RWMutex
-	buckets  map[string]*tokenBucket
-	rate     float64       // tokens per second
-	burst    int           // maximum tokens
-	cleanup  time.Duration // cleanup interval for idle buckets
+	mu      sync.RWMutex
+	buckets map[string]*tokenBucket
+	rate    float64       // tokens per second
+	burst   int           // maximum tokens
+	cleanup time.Duration // cleanup interval for idle buckets
 }
 
 // tokenBucket represents a token bucket for a single peer.
@@ -30,8 +30,8 @@ type RateLimitConfig struct {
 // DefaultRateLimitConfig returns default rate limit configuration.
 func DefaultRateLimitConfig() *RateLimitConfig {
 	return &RateLimitConfig{
-		Rate:            10.0,           // 10 requests per second
-		Burst:           20,             // burst of 20
+		Rate:            10.0,            // 10 requests per second
+		Burst:           20,              // burst of 20
 		CleanupInterval: 5 * time.Minute, // cleanup every 5 minutes
 	}
 }

@@ -19,23 +19,23 @@ const (
 type Capability string
 
 const (
-	CapabilityEmbedding   Capability = "embedding"
-	CapabilityCompletion  Capability = "completion"
-	CapabilityCodeEdit    Capability = "code_edit"
-	CapabilityCodeReview  Capability = "code_review"
-	CapabilityChat        Capability = "chat"
-	CapabilityToolUse     Capability = "tool_use"
-	CapabilityVision      Capability = "vision"
+	CapabilityEmbedding  Capability = "embedding"
+	CapabilityCompletion Capability = "completion"
+	CapabilityCodeEdit   Capability = "code_edit"
+	CapabilityCodeReview Capability = "code_review"
+	CapabilityChat       Capability = "chat"
+	CapabilityToolUse    Capability = "tool_use"
+	CapabilityVision     Capability = "vision"
 )
 
 // AgentInfo contains metadata about an agent.
 type AgentInfo struct {
-	ID           string       `json:"id"`
-	Name         string       `json:"name"`
-	Provider     Provider     `json:"provider"`
-	Model        string       `json:"model"`
-	Version      string       `json:"version"`
-	Capabilities []Capability `json:"capabilities"`
+	ID           string         `json:"id"`
+	Name         string         `json:"name"`
+	Provider     Provider       `json:"provider"`
+	Model        string         `json:"model"`
+	Version      string         `json:"version"`
+	Capabilities []Capability   `json:"capabilities"`
 	Metadata     map[string]any `json:"metadata,omitempty"`
 }
 
@@ -43,11 +43,11 @@ type AgentInfo struct {
 type AgentStatus string
 
 const (
-	StatusOnline      AgentStatus = "online"
-	StatusOffline     AgentStatus = "offline"
-	StatusBusy        AgentStatus = "busy"
-	StatusError       AgentStatus = "error"
-	StatusConnecting  AgentStatus = "connecting"
+	StatusOnline     AgentStatus = "online"
+	StatusOffline    AgentStatus = "offline"
+	StatusBusy       AgentStatus = "busy"
+	StatusError      AgentStatus = "error"
+	StatusConnecting AgentStatus = "connecting"
 )
 
 // ConnectedAgent represents an agent connected to the cluster.
@@ -64,8 +64,8 @@ type ConnectedAgent struct {
 // AgentMessage is a message exchanged between agents.
 type AgentMessage struct {
 	ID        string         `json:"id"`
-	From      string         `json:"from"`       // Agent ID
-	To        string         `json:"to"`         // Agent ID or "*" for broadcast
+	From      string         `json:"from"` // Agent ID
+	To        string         `json:"to"`   // Agent ID or "*" for broadcast
 	Type      MessageType    `json:"type"`
 	Payload   map[string]any `json:"payload"`
 	Timestamp time.Time      `json:"timestamp"`

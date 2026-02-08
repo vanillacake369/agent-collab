@@ -25,8 +25,8 @@ type Server struct {
 	toolList []Tool
 
 	// Resource handlers
-	resources       map[string]ResourceHandler
-	resourceList    []Resource
+	resources    map[string]ResourceHandler
+	resourceList []Resource
 
 	// Agent registry
 	registry *agent.Registry

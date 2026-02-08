@@ -9,27 +9,27 @@ import (
 type UsageCategory string
 
 const (
-	CategoryEmbedding    UsageCategory = "embedding"
-	CategorySync         UsageCategory = "sync"
-	CategoryNegotiation  UsageCategory = "negotiation"
-	CategoryQuery        UsageCategory = "query"
-	CategoryOther        UsageCategory = "other"
+	CategoryEmbedding   UsageCategory = "embedding"
+	CategorySync        UsageCategory = "sync"
+	CategoryNegotiation UsageCategory = "negotiation"
+	CategoryQuery       UsageCategory = "query"
+	CategoryOther       UsageCategory = "other"
 )
 
 // UsageRecord represents a single token usage event.
 type UsageRecord struct {
-	ID        string        `json:"id"`
-	Category  UsageCategory `json:"category"`
-	Tokens    int64         `json:"tokens"`
-	Model     string        `json:"model"`
-	Timestamp time.Time     `json:"timestamp"`
+	ID        string         `json:"id"`
+	Category  UsageCategory  `json:"category"`
+	Tokens    int64          `json:"tokens"`
+	Model     string         `json:"model"`
+	Timestamp time.Time      `json:"timestamp"`
 	Metadata  map[string]any `json:"metadata,omitempty"`
 }
 
 // HourlyBucket aggregates usage for one hour.
 type HourlyBucket struct {
-	Hour      time.Time            `json:"hour"`
-	Total     int64                `json:"total"`
+	Hour       time.Time               `json:"hour"`
+	Total      int64                   `json:"total"`
 	ByCategory map[UsageCategory]int64 `json:"by_category"`
 }
 
@@ -38,9 +38,9 @@ type UsageMetrics struct {
 	mu sync.RWMutex
 
 	// Current period totals
-	TokensToday  int64 `json:"tokens_today"`
-	TokensWeek   int64 `json:"tokens_week"`
-	TokensMonth  int64 `json:"tokens_month"`
+	TokensToday int64 `json:"tokens_today"`
+	TokensWeek  int64 `json:"tokens_week"`
+	TokensMonth int64 `json:"tokens_month"`
 
 	// Breakdown by category
 	ByCategory map[UsageCategory]int64 `json:"by_category"`
@@ -49,9 +49,9 @@ type UsageMetrics struct {
 	HourlyData []*HourlyBucket `json:"hourly_data"`
 
 	// Cost estimates
-	CostToday  float64 `json:"cost_today"`
-	CostWeek   float64 `json:"cost_week"`
-	CostMonth  float64 `json:"cost_month"`
+	CostToday float64 `json:"cost_today"`
+	CostWeek  float64 `json:"cost_week"`
+	CostMonth float64 `json:"cost_month"`
 
 	// Rate
 	TokensPerHour float64 `json:"tokens_per_hour"`

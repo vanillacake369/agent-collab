@@ -4,16 +4,16 @@ package token
 // Based on common LLM pricing as of 2024
 var modelPricing = map[string]float64{
 	// OpenAI models
-	"gpt-4":           30.0,
-	"gpt-4-turbo":     10.0,
-	"gpt-4o":          5.0,
-	"gpt-4o-mini":     0.15,
-	"gpt-3.5-turbo":   0.5,
+	"gpt-4":         30.0,
+	"gpt-4-turbo":   10.0,
+	"gpt-4o":        5.0,
+	"gpt-4o-mini":   0.15,
+	"gpt-3.5-turbo": 0.5,
 
 	// Anthropic models
-	"claude-3-opus":   15.0,
-	"claude-3-sonnet": 3.0,
-	"claude-3-haiku":  0.25,
+	"claude-3-opus":     15.0,
+	"claude-3-sonnet":   3.0,
+	"claude-3-haiku":    0.25,
 	"claude-3.5-sonnet": 3.0,
 
 	// Embedding models

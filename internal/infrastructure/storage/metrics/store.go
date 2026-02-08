@@ -157,12 +157,12 @@ func (s *Store) AggregateDay(date time.Time) (*DailyAggregate, error) {
 
 // DailyAggregate holds aggregated metrics for a day.
 type DailyAggregate struct {
-	Date          time.Time                       `json:"date"`
-	TotalTokens   int64                           `json:"total_tokens"`
-	RecordCount   int                             `json:"record_count"`
-	ByCategory    map[token.UsageCategory]int64   `json:"by_category"`
-	ByModel       map[string]int64                `json:"by_model"`
-	EstimatedCost float64                         `json:"estimated_cost"`
+	Date          time.Time                     `json:"date"`
+	TotalTokens   int64                         `json:"total_tokens"`
+	RecordCount   int                           `json:"record_count"`
+	ByCategory    map[token.UsageCategory]int64 `json:"by_category"`
+	ByModel       map[string]int64              `json:"by_model"`
+	EstimatedCost float64                       `json:"estimated_cost"`
 }
 
 // Close flushes any pending records and closes the store.

@@ -107,12 +107,12 @@ func runTokenRefresh(cmd *cobra.Command, args []string) error {
 
 // TokenUsage는 토큰 사용량 정보입니다.
 type TokenUsage struct {
-	Period      string         `json:"period"`
-	TotalTokens int64          `json:"total_tokens"`
-	Limit       int64          `json:"limit"`
-	UsagePercent float64       `json:"usage_percent"`
-	Breakdown   []UsageBreakdown `json:"breakdown"`
-	EstCost     float64        `json:"estimated_cost_usd"`
+	Period       string           `json:"period"`
+	TotalTokens  int64            `json:"total_tokens"`
+	Limit        int64            `json:"limit"`
+	UsagePercent float64          `json:"usage_percent"`
+	Breakdown    []UsageBreakdown `json:"breakdown"`
+	EstCost      float64          `json:"estimated_cost_usd"`
 }
 
 // UsageBreakdown은 사용량 상세 정보입니다.

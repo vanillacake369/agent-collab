@@ -11,13 +11,13 @@ const CleanupInterval = 10 * time.Second
 
 // LockStore is a lock storage.
 type LockStore struct {
-	mu       sync.RWMutex
-	locks    map[string]*SemanticLock // lockID -> lock
-	byTarget map[string]string        // targetID -> lockID
-	history  []*HistoryEntry          // recent lock history
+	mu         sync.RWMutex
+	locks      map[string]*SemanticLock // lockID -> lock
+	byTarget   map[string]string        // targetID -> lockID
+	history    []*HistoryEntry          // recent lock history
 	maxHistory int
-	ctx      context.Context
-	cancel   context.CancelFunc
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 // NewLockStore creates a new lock store.

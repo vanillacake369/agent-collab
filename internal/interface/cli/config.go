@@ -82,8 +82,8 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	fmt.Println("  API Keys Status:")
 	apiKeys := []struct {
-		name    string
-		envVar  string
+		name     string
+		envVar   string
 		provider embedding.Provider
 	}{
 		{"OpenAI", "OPENAI_API_KEY", embedding.ProviderOpenAI},
@@ -142,9 +142,9 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 		"token.daily_limit":       true,
 		"ui.theme":                true,
 		// Embedding/AI settings
-		"embedding.provider":      true,
-		"embedding.model":         true,
-		"embedding.base_url":      true,
+		"embedding.provider": true,
+		"embedding.model":    true,
+		"embedding.base_url": true,
 	}
 
 	if !validKeys[key] {

@@ -12,8 +12,8 @@ import (
 type RecoveryManager struct {
 	mu sync.RWMutex
 
-	store   *LockStore
-	nodeID  string
+	store  *LockStore
+	nodeID string
 
 	// Recovery state
 	inRecovery     bool
@@ -30,20 +30,20 @@ type RecoveryManager struct {
 
 // RecoveryConflict represents a conflict discovered during recovery.
 type RecoveryConflict struct {
-	LocalLock  *SemanticLock `json:"local_lock"`
-	RemoteLock *SemanticLock `json:"remote_lock"`
+	LocalLock  *SemanticLock  `json:"local_lock"`
+	RemoteLock *SemanticLock  `json:"remote_lock"`
 	Resolution ResolutionType `json:"resolution"`
-	Reason     string        `json:"reason"`
+	Reason     string         `json:"reason"`
 }
 
 // RecoveryResult holds the result of recovery process.
 type RecoveryResult struct {
-	LocksReconciled   int              `json:"locks_reconciled"`
-	LocksRemoved      int              `json:"locks_removed"`
-	ConflictsResolved int              `json:"conflicts_resolved"`
-	ConflictsEscalated int             `json:"conflicts_escalated"`
-	Duration          time.Duration    `json:"duration"`
-	Conflicts         []*RecoveryConflict `json:"conflicts,omitempty"`
+	LocksReconciled    int                 `json:"locks_reconciled"`
+	LocksRemoved       int                 `json:"locks_removed"`
+	ConflictsResolved  int                 `json:"conflicts_resolved"`
+	ConflictsEscalated int                 `json:"conflicts_escalated"`
+	Duration           time.Duration       `json:"duration"`
+	Conflicts          []*RecoveryConflict `json:"conflicts,omitempty"`
 }
 
 // NewRecoveryManager creates a new recovery manager.
