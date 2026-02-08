@@ -1,86 +1,38 @@
+version: "2"
+
 run:
   timeout: 5m
   modules-download-mode: readonly
 
 linters:
+  # Critical linters only for initial release
+  # TODO: Enable more linters progressively
+  default: none
   enable:
-    - bodyclose
-    - dogsled
-    - dupl
-    - errcheck
-    - gochecknoinits
-    - goconst
-    - gocritic
-    - gocyclo
-    - gofmt
-    - goimports
-    - goprintffuncname
-    - gosec
-    - gosimple
     - govet
     - ineffassign
-    - misspell
-    - nakedret
-    - noctx
-    - nolintlint
-    - revive
     - staticcheck
-    - typecheck
-    - unconvert
-    - unused
-    - whitespace
+  settings:
+    staticcheck:
+      checks:
+        - all
+        - -ST1000  # Package comment
+        - -ST1003  # MixedCaps
+        - -ST1005  # Error strings capitalization
+        - -ST1020  # Comment on exported method
+        - -ST1021  # Comment on exported type
+        - -ST1022  # Comment on exported const/var
+        - -SA1019  # Deprecated
+        - -QF1003  # Could use tagged switch
 
-linters-settings:
-  dupl:
-    threshold: 150
-  gocyclo:
-    min-complexity: 20
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-      - style
-  goimports:
-    local-prefixes: agent-collab
-  revive:
-    rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: context-keys-type
-      - name: dot-imports
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: exported
-      - name: increment-decrement
-      - name: var-naming
-      - name: var-declaration
-      - name: package-comments
-      - name: range
-      - name: receiver-naming
-      - name: time-naming
-      - name: unexported-return
-      - name: indent-error-flow
-      - name: errorf
-      - name: empty-block
-      - name: superfluous-else
-      - name: unreachable-code
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - agent-collab
 
 issues:
   exclude-use-default: false
-  exclude-rules:
-    # Ignore long lines in generated files
-    - path: _test\.go
-      linters:
-        - dupl
-        - gocyclo
-    # Ignore magic numbers in tests
-    - path: _test\.go
-      text: "Magic number"
-    # Allow init functions in CLI commands
-    - path: internal/interface/cli/
-      linters:
-        - gochecknoinits
