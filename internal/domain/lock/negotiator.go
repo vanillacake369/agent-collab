@@ -81,6 +81,9 @@ type LockNegotiator struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 
+	// Rate limiting
+	rateLimiter *RateLimiter
+
 	// Callbacks
 	onConflict  func(*LockConflict) error
 	onEscalate  func(*NegotiationSession) error
@@ -105,6 +108,24 @@ func NewLockNegotiator(ctx context.Context, store *LockStore) *LockNegotiator {
 		intentQueue: make(map[string]*LockIntent),
 		ctx:         ctx,
 		cancel:      cancel,
+		rateLimiter: NewRateLimiter(DefaultRateLimitConfig()),
+	}
+
+	go n.cleanupExpiredSessions()
+
+	return n
+}
+
+// NewLockNegotiatorWithConfig creates a new lock negotiator with custom rate limit config.
+func NewLockNegotiatorWithConfig(ctx context.Context, store *LockStore, rlConfig *RateLimitConfig) *LockNegotiator {
+	ctx, cancel := context.WithCancel(ctx)
+	n := &LockNegotiator{
+		store:       store,
+		sessions:    make(map[string]*NegotiationSession),
+		intentQueue: make(map[string]*LockIntent),
+		ctx:         ctx,
+		cancel:      cancel,
+		rateLimiter: NewRateLimiter(rlConfig),
 	}
 
 	go n.cleanupExpiredSessions()
@@ -135,6 +156,11 @@ func (n *LockNegotiator) SetBroadcastFn(fn func(msg any) error) {
 
 // AnnounceIntent announces lock acquisition intent (Phase 1).
 func (n *LockNegotiator) AnnounceIntent(ctx context.Context, lock *SemanticLock) (*LockIntent, error) {
+	// Rate limit check before acquiring lock
+	if !n.rateLimiter.Allow(lock.HolderID) {
+		return nil, ErrRateLimited
+	}
+
 	n.mu.Lock()
 	defer n.mu.Unlock()
 

@@ -33,4 +33,7 @@ var (
 
 	// ErrIntentNotFound indicates the lock intent was not found.
 	ErrIntentNotFound = errors.New("intent not found")
+
+	// ErrRateLimited indicates the request was rate limited.
+	ErrRateLimited = errors.New("rate limited: too many requests")
 )
