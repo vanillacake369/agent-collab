@@ -25,7 +25,6 @@ linters:
     - nolintlint
     - revive
     - staticcheck
-    - stylecheck
     - typecheck
     - unconvert
     - unused
