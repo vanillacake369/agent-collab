@@ -10,30 +10,38 @@ import (
 
 	"agent-collab/internal/domain/ctxsync"
 	"agent-collab/internal/domain/lock"
+	"agent-collab/internal/domain/token"
 	"agent-collab/internal/infrastructure/crypto"
+	"agent-collab/internal/infrastructure/embedding"
 	"agent-collab/internal/infrastructure/network/libp2p"
+	"agent-collab/internal/infrastructure/storage/metrics"
+	"agent-collab/internal/infrastructure/storage/vector"
 
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 )
 
-// App은 애플리케이션입니다.
+// App is the main application orchestrator.
 type App struct {
 	mu sync.RWMutex
 
-	// 설정
+	// Configuration
 	config *Config
 
-	// 인프라
-	keyPair *crypto.KeyPair
-	node    *libp2p.Node
+	// Infrastructure
+	keyPair      *crypto.KeyPair
+	node         *libp2p.Node
+	vectorStore  vector.Store
+	metricsStore *metrics.Store
+	embedService *embedding.Service
 
-	// 도메인 서비스
-	lockService *lock.LockService
-	syncManager *ctxsync.SyncManager
+	// Domain services
+	lockService  *lock.LockService
+	syncManager  *ctxsync.SyncManager
+	tokenTracker *token.Tracker
 
-	// 상태
+	// State
 	running bool
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -108,19 +116,24 @@ func (a *App) Initialize(ctx context.Context, projectName string) (*InitResult, 
 	}
 	a.node = node
 
-	// 3. 도메인 서비스 초기화
+	// 3. Initialize domain services
 	nodeIDStr := a.node.ID().String()
 	a.lockService = lock.NewLockService(ctx, nodeIDStr, projectName+"-agent")
 	a.syncManager = ctxsync.NewSyncManager(nodeIDStr, projectName+"-agent")
 
-	// 4. 주소 문자열 목록 생성
+	// 4. Initialize Phase 3 components
+	if err := a.initPhase3Components(nodeIDStr, projectName+"-agent"); err != nil {
+		return nil, fmt.Errorf("failed to initialize Phase 3 components: %w", err)
+	}
+
+	// 5. Build address string list
 	addrs := a.node.Addrs()
 	addrStrs := make([]string, len(addrs))
 	for i, addr := range addrs {
 		addrStrs[i] = addr.String()
 	}
 
-	// 5. 초대 토큰 생성
+	// 6. Create invite token
 	token, err := crypto.NewInviteToken(addrStrs, projectName, nodeIDStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create invite token: %w", err)
@@ -205,12 +218,17 @@ func (a *App) Join(ctx context.Context, tokenStr string) (*JoinResult, error) {
 	}
 	a.node = node
 
-	// 5. 도메인 서비스 초기화
+	// 5. Initialize domain services
 	nodeIDStr := a.node.ID().String()
 	a.lockService = lock.NewLockService(ctx, nodeIDStr, token.ProjectName+"-agent")
 	a.syncManager = ctxsync.NewSyncManager(nodeIDStr, token.ProjectName+"-agent")
 
-	// 6. Bootstrap 수행
+	// 6. Initialize Phase 3 components
+	if err := a.initPhase3Components(nodeIDStr, token.ProjectName+"-agent"); err != nil {
+		return nil, fmt.Errorf("failed to initialize Phase 3 components: %w", err)
+	}
+
+	// 7. Perform bootstrap
 	if err := a.node.Bootstrap(ctx, bootstrapPeers); err != nil {
 		fmt.Printf("Bootstrap warning: %v\n", err)
 	}
@@ -278,6 +296,19 @@ func (a *App) Stop() error {
 
 	if a.syncManager != nil {
 		a.syncManager.Stop()
+	}
+
+	// Close Phase 3 components
+	if a.tokenTracker != nil {
+		a.tokenTracker.Close()
+	}
+
+	if a.metricsStore != nil {
+		a.metricsStore.Close()
+	}
+
+	if a.vectorStore != nil {
+		a.vectorStore.Close()
 	}
 
 	if a.node != nil {
@@ -464,6 +495,20 @@ func (a *App) GetStatus() *Status {
 		status.WatchedFiles = stats.WatchedFiles
 	}
 
+	// Phase 3 metrics
+	if a.tokenTracker != nil {
+		metrics := a.tokenTracker.GetMetrics()
+		status.TokensToday = metrics.TokensToday
+		status.TokensPerHour = metrics.TokensPerHour
+		status.CostToday = metrics.CostToday
+	}
+
+	if a.vectorStore != nil {
+		if stats, err := a.vectorStore.GetCollectionStats("default"); err == nil {
+			status.EmbeddingCount = stats.Count
+		}
+	}
+
 	return status
 }
 
@@ -492,7 +537,60 @@ func (a *App) Config() *Config {
 	return a.config
 }
 
-// CreateInviteToken은 초대 토큰을 생성합니다.
+// TokenTracker returns the token usage tracker.
+func (a *App) TokenTracker() *token.Tracker {
+	return a.tokenTracker
+}
+
+// VectorStore returns the vector store.
+func (a *App) VectorStore() vector.Store {
+	return a.vectorStore
+}
+
+// EmbeddingService returns the embedding service.
+func (a *App) EmbeddingService() *embedding.Service {
+	return a.embedService
+}
+
+// initPhase3Components initializes token tracking, vector storage, and embedding.
+func (a *App) initPhase3Components(nodeID, nodeName string) error {
+	// Initialize token tracker
+	a.tokenTracker = token.NewTracker(nodeID, nodeName)
+
+	// Initialize metrics store
+	metricsStore, err := metrics.NewStore(a.config.DataDir)
+	if err != nil {
+		return fmt.Errorf("failed to create metrics store: %w", err)
+	}
+	a.metricsStore = metricsStore
+
+	// Wire token tracker to metrics store
+	a.tokenTracker.SetPersistFn(func(record *token.UsageRecord) error {
+		return a.metricsStore.Save(record)
+	})
+
+	// Initialize vector store
+	vectorStore, err := vector.NewMemoryStore(a.config.DataDir, 0)
+	if err != nil {
+		return fmt.Errorf("failed to create vector store: %w", err)
+	}
+	a.vectorStore = vectorStore
+
+	// Initialize embedding service
+	embedConfig := embedding.DefaultConfig()
+	embedConfig.Provider = embedding.ProviderMock // Use mock by default
+	a.embedService = embedding.NewService(embedConfig)
+	a.embedService.SetTokenTracker(a.tokenTracker)
+
+	// Wire embedding function to vector store
+	a.vectorStore.(*vector.MemoryStore).SetEmbeddingFunction(func(text string) ([]float32, error) {
+		return a.embedService.Embed(context.Background(), text)
+	})
+
+	return nil
+}
+
+// CreateInviteToken creates an invite token.
 func (a *App) CreateInviteToken() (string, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -534,7 +632,7 @@ type JoinResult struct {
 	ConnectedPeers int    `json:"connected_peers"`
 }
 
-// Status는 상태입니다.
+// Status holds the application status.
 type Status struct {
 	Running      bool     `json:"running"`
 	ProjectName  string   `json:"project_name"`
@@ -545,6 +643,14 @@ type Status struct {
 	MyLockCount  int      `json:"my_lock_count"`
 	DeltaCount   int      `json:"delta_count"`
 	WatchedFiles int      `json:"watched_files"`
+
+	// Token usage (Phase 3)
+	TokensToday   int64   `json:"tokens_today"`
+	TokensPerHour float64 `json:"tokens_per_hour"`
+	CostToday     float64 `json:"cost_today"`
+
+	// Vector store (Phase 3)
+	EmbeddingCount int64 `json:"embedding_count"`
 }
 
 // Ensure libp2pcrypto is used
