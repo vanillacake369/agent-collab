@@ -1,5 +1,6 @@
 # GoReleaser configuration for agent-collab
 # Documentation: https://goreleaser.com
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 
 version: 2
 
@@ -23,31 +24,49 @@ builds:
     goarch:
       - amd64
       - arm64
+      - arm
+    goarm:
+      - "7"
+    ignore:
+      - goos: windows
+        goarch: arm64
+      - goos: windows
+        goarch: arm
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
+      - -X main.commit={{.ShortCommit}}
       - -X main.date={{.Date}}
       - -X main.builtBy=goreleaser
     mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:
   - id: default
-    format: tar.gz
-    name_template: >-
-      {{ .ProjectName }}_
-      {{- .Version }}_
-      {{- .Os }}_
-      {{- .Arch }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    formats:
+      - tar.gz
+      - zip
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
+      - goos: linux
+        formats:
+          - tar.gz
+      - goos: darwin
+        formats:
+          - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_v{{ .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}amd64
+      {{- else if eq .Arch "arm64" }}arm64
+      {{- else if eq .Arch "arm" }}armv{{ .Arm }}
+      {{- else }}{{ .Arch }}{{ end }}
     files:
       - README.md
       - LICENSE*
-      - configs/default.yaml
-      - docs/*.md
+      - docs/*
+    wrap_in_directory: true
 
 checksum:
   name_template: "checksums.txt"
@@ -61,64 +80,118 @@ changelog:
   use: github
   filters:
     exclude:
-      - "^docs:"
       - "^test:"
       - "^chore:"
+      - "^ci:"
       - "typo"
       - Merge pull request
       - Merge branch
   groups:
-    - title: "🚀 Features"
+    - title: "Features"
       regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
       order: 0
-    - title: "🐛 Bug Fixes"
+    - title: "Bug Fixes"
       regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
       order: 1
-    - title: "🔧 Refactoring"
-      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+    - title: "Performance"
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
       order: 2
-    - title: "📚 Documentation"
-      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+    - title: "Refactoring"
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
       order: 3
-    - title: "🔨 Other"
+    - title: "Documentation"
+      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      order: 4
+    - title: "Other"
       order: 999
 
 release:
   github:
-    owner: "{{ .Env.GITHUB_OWNER }}"
+    owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
     name: agent-collab
-  draft: true
+  draft: false
   prerelease: auto
   mode: replace
   header: |
-    ## agent-collab {{ .Version }}
+    ## Installation
 
-    Distributed P2P agent collaboration system for multi-agent development.
+    ### Homebrew (macOS/Linux)
+    ```bash
+    brew install {{ .Env.GITHUB_REPOSITORY_OWNER }}/tap/agent-collab
+    ```
+
+    ### APT (Debian/Ubuntu)
+    ```bash
+    curl -fsSL https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab/releases/download/{{ .Tag }}/agent-collab_{{ .Version }}_linux_amd64.deb -o agent-collab.deb
+    sudo dpkg -i agent-collab.deb
+    ```
+
+    ### RPM (Fedora/RHEL/CentOS)
+    ```bash
+    curl -fsSL https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab/releases/download/{{ .Tag }}/agent-collab_{{ .Version }}_linux_amd64.rpm -o agent-collab.rpm
+    sudo rpm -i agent-collab.rpm
+    ```
+
+    ### Nix
+    ```bash
+    nix run github:{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab
+    # or add to flake inputs
+    ```
+
+    ### Docker
+    ```bash
+    docker pull ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:{{ .Version }}
+    ```
+
+    ### Direct Download
+    Download the appropriate archive for your platform from the assets below.
 
   footer: |
     ---
 
-    **Full Changelog**: https://github.com/{{ .Env.GITHUB_OWNER }}/agent-collab/compare/{{ .PreviousTag }}...{{ .Tag }}
-
-    ### Quick Install
+    ## Quick Start
 
     ```bash
-    # macOS/Linux
-    curl -sSL https://github.com/{{ .Env.GITHUB_OWNER }}/agent-collab/releases/download/{{ .Tag }}/agent-collab_{{ .Version }}_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m).tar.gz | tar xz
-    sudo mv agent-collab /usr/local/bin/
+    # Start the daemon
+    agent-collab daemon start
 
-    # Windows (PowerShell)
-    Invoke-WebRequest -Uri "https://github.com/{{ .Env.GITHUB_OWNER }}/agent-collab/releases/download/{{ .Tag }}/agent-collab_{{ .Version }}_windows_amd64.zip" -OutFile agent-collab.zip
-    Expand-Archive agent-collab.zip -DestinationPath .
+    # Initialize a new cluster
+    agent-collab init my-project
+
+    # Check status
+    agent-collab status
+
+    # Connect Claude Code via MCP
+    claude mcp add agent-collab -- agent-collab mcp serve
     ```
 
+    **Full Changelog**: https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+# Homebrew formula
+brews:
+  - name: agent-collab
+    repository:
+      owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab"
+    description: "P2P-based distributed collaboration system for AI agents"
+    license: "MIT"
+    install: |
+      bin.install "agent-collab"
+    test: |
+      system "#{bin}/agent-collab", "version", "--short"
+    skip_upload: auto
+
+# DEB/RPM/APK packages
 nfpms:
   - id: packages
     package_name: agent-collab
-    vendor: agent-collab
-    homepage: "https://github.com/{{ .Env.GITHUB_OWNER }}/agent-collab"
-    maintainer: "agent-collab maintainers"
-    description: "Distributed P2P agent collaboration system"
+    vendor: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
+    homepage: "https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab"
+    maintainer: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
+    description: "P2P-based distributed collaboration system for AI agents"
     license: MIT
     formats:
       - deb
@@ -126,9 +199,62 @@ nfpms:
       - apk
     bindir: /usr/bin
     contents:
-      - src: ./configs/default.yaml
-        dst: /etc/agent-collab/config.yaml
-        type: config
+      - src: ./LICENSE
+        dst: /usr/share/licenses/agent-collab/LICENSE
+      - src: ./README.md
+        dst: /usr/share/doc/agent-collab/README.md
+    scripts:
+      postinstall: scripts/postinstall.sh
+      preremove: scripts/preremove.sh
+
+# Docker images
+dockers:
+  - image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:{{ .Version }}-amd64"
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:latest-amd64"
+    goarch: amd64
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title=agent-collab"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source=https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+    skip_push: auto
+
+  - image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:{{ .Version }}-arm64"
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:latest-arm64"
+    goarch: arm64
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.title=agent-collab"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source=https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+    skip_push: auto
+
+# Docker manifests (multi-arch)
+docker_manifests:
+  - name_template: "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:{{ .Version }}-amd64"
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:{{ .Version }}-arm64"
+    skip_push: auto
+  - name_template: "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:latest"
+    image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:latest-amd64"
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab:latest-arm64"
+    skip_push: auto
+
+# Source archive
+source:
+  enabled: true
 
 announce:
   skip: true

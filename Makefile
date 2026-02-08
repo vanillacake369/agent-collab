@@ -1,4 +1,4 @@
-.PHONY: build test lint clean run deps release release-snapshot
+.PHONY: build test lint clean run deps release release-snapshot docker docker-multiarch nix-build nix-run
 
 VERSION := $(shell git describe --tags --always 2>/dev/null || echo "dev")
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -88,6 +88,40 @@ release-check:
 generate:
 	go generate ./...
 
+# Docker build
+docker:
+	docker build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg DATE=$(DATE) \
+		-t $(BINARY):$(VERSION) \
+		-t $(BINARY):latest \
+		.
+
+# Docker multi-arch build
+docker-multiarch:
+	docker buildx build \
+		--platform linux/amd64,linux/arm64 \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg DATE=$(DATE) \
+		-t $(BINARY):$(VERSION) \
+		-t $(BINARY):latest \
+		--push \
+		.
+
+# Nix build
+nix-build:
+	nix build .#agent-collab
+
+# Nix run
+nix-run:
+	nix run .#agent-collab -- --help
+
+# Nix develop shell
+nix-develop:
+	nix develop
+
 # Security scan
 security:
 	gosec ./...
@@ -120,6 +154,15 @@ help:
 	@echo "    release         - Create release (requires GITHUB_TOKEN)"
 	@echo "    release-snapshot- Create local snapshot release"
 	@echo "    release-check   - Validate goreleaser config"
+	@echo ""
+	@echo "  Docker:"
+	@echo "    docker          - Build Docker image"
+	@echo "    docker-multiarch- Build multi-arch Docker image"
+	@echo ""
+	@echo "  Nix:"
+	@echo "    nix-build       - Build with Nix"
+	@echo "    nix-run         - Run with Nix"
+	@echo "    nix-develop     - Enter Nix development shell"
 	@echo ""
 	@echo "  Other:"
 	@echo "    deps            - Install dependencies"

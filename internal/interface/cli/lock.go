@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"time"
+
+	"agent-collab/internal/application"
 
 	"github.com/spf13/cobra"
 )
@@ -40,34 +43,20 @@ func init() {
 	lockCmd.AddCommand(lockHistoryCmd)
 }
 
-// LockInfo는 락 정보입니다.
-type LockInfo struct {
-	ID        string    `json:"id"`
-	Holder    string    `json:"holder"`
-	Target    string    `json:"target"`
-	Intention string    `json:"intention"`
-	AcquiredAt time.Time `json:"acquired_at"`
-	TTL       int       `json:"ttl_seconds"`
-}
-
 func runLockList(cmd *cobra.Command, args []string) error {
-	// TODO: 실제 락 목록 가져오기
-	locks := []LockInfo{
-		{
-			ID:        "lock-001",
-			Holder:    "Alice",
-			Target:    "src/auth/login.go:45-67",
-			Intention: "리팩토링 중",
-			TTL:       25,
-		},
-		{
-			ID:        "lock-002",
-			Holder:    "Bob",
-			Target:    "pkg/api/handler.go:120-145",
-			Intention: "버그 수정",
-			TTL:       18,
-		},
+	app, err := application.New(nil)
+	if err != nil {
+		return fmt.Errorf("앱 생성 실패: %w", err)
 	}
+
+	lockService := app.LockService()
+	if lockService == nil {
+		fmt.Println("❌ 클러스터가 초기화되지 않았습니다.")
+		fmt.Println("먼저 'agent-collab init' 또는 'agent-collab join'을 실행하세요.")
+		return nil
+	}
+
+	locks := lockService.ListLocks()
 
 	fmt.Println("=== Active Locks ===")
 	fmt.Println()
@@ -77,13 +66,18 @@ func runLockList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Printf("%-10s %-10s %-30s %-15s %s\n",
+	fmt.Printf("%-12s %-12s %-35s %-15s %s\n",
 		"ID", "HOLDER", "TARGET", "INTENTION", "TTL")
-	fmt.Println("─────────────────────────────────────────────────────────────────────────")
+	fmt.Println("─────────────────────────────────────────────────────────────────────────────────")
 
 	for _, l := range locks {
-		fmt.Printf("%-10s %-10s %-30s %-15s %ds\n",
-			l.ID, l.Holder, l.Target, l.Intention, l.TTL)
+		target := fmt.Sprintf("%s:%d-%d", l.Target.FilePath, l.Target.StartLine, l.Target.EndLine)
+		if len(target) > 35 {
+			target = target[:32] + "..."
+		}
+		ttl := l.TTLRemaining().Truncate(time.Second)
+		fmt.Printf("%-12s %-12s %-35s %-15s %v\n",
+			l.ID, l.HolderName, target, l.Intention, ttl)
 	}
 
 	return nil
@@ -92,30 +86,49 @@ func runLockList(cmd *cobra.Command, args []string) error {
 func runLockRelease(cmd *cobra.Command, args []string) error {
 	lockID := args[0]
 
+	app, err := application.New(nil)
+	if err != nil {
+		return fmt.Errorf("앱 생성 실패: %w", err)
+	}
+
+	lockService := app.LockService()
+	if lockService == nil {
+		return fmt.Errorf("클러스터가 초기화되지 않았습니다")
+	}
+
 	fmt.Printf("🔓 락 해제 중: %s\n", lockID)
 
-	// TODO: 실제 락 해제
-	fmt.Println("✓ 락이 해제되었습니다.")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
+	if err := lockService.ReleaseLock(ctx, lockID); err != nil {
+		return fmt.Errorf("락 해제 실패: %w", err)
+	}
+
+	fmt.Println("✓ 락이 해제되었습니다.")
 	return nil
 }
 
 func runLockHistory(cmd *cobra.Command, args []string) error {
-	// TODO: 실제 히스토리 가져오기
+	app, err := application.New(nil)
+	if err != nil {
+		return fmt.Errorf("앱 생성 실패: %w", err)
+	}
+
+	lockService := app.LockService()
+	if lockService == nil {
+		fmt.Println("❌ 클러스터가 초기화되지 않았습니다.")
+		return nil
+	}
+
+	history := lockService.GetHistory(10)
+
 	fmt.Println("=== Lock History (Last 10) ===")
 	fmt.Println()
 
-	history := []struct {
-		Time      string
-		Action    string
-		Holder    string
-		Target    string
-	}{
-		{"12:34:56", "acquired", "Alice", "src/auth/login.go"},
-		{"12:34:45", "released", "You", "pkg/config/config.go"},
-		{"12:34:30", "acquired", "Bob", "pkg/api/handler.go"},
-		{"12:33:12", "conflict", "Charlie → Alice", "src/auth/login.go"},
-		{"12:32:00", "released", "Alice", "src/models/user.go"},
+	if len(history) == 0 {
+		fmt.Println("락 히스토리가 없습니다.")
+		return nil
 	}
 
 	for _, h := range history {
@@ -125,9 +138,11 @@ func runLockHistory(cmd *cobra.Command, args []string) error {
 			icon = "○"
 		case "conflict":
 			icon = "⚠"
+		case "expired":
+			icon = "⏱"
 		}
-		fmt.Printf("  %s %s %-10s %-20s %s\n",
-			h.Time, icon, h.Action, h.Holder, h.Target)
+		fmt.Printf("  %s %s %-10s %-15s %s\n",
+			h.Timestamp.Format("15:04:05"), icon, h.Action, h.HolderName, h.Target)
 	}
 
 	return nil

@@ -2,18 +2,13 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
+	"agent-collab/internal/application"
+
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/spf13/cobra"
 )
-
-// PeerStatus는 peer 상태 정보입니다.
-type PeerStatus struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-	Latency   int    `json:"latency_ms"`
-	Transport string `json:"transport"`
-}
 
 var peersCmd = &cobra.Command{
 	Use:   "peers",
@@ -50,73 +45,127 @@ func init() {
 }
 
 func runPeersList(cmd *cobra.Command, args []string) error {
-	// TODO: 실제 peer 목록 가져오기
-	peers := []PeerStatus{
-		{ID: "QmAbc...123", Name: "Alice", Status: "online", Latency: 12, Transport: "QUIC"},
-		{ID: "QmDef...456", Name: "Bob", Status: "online", Latency: 45, Transport: "WebRTC"},
-		{ID: "QmGhi...789", Name: "Charlie", Status: "syncing", Latency: 89, Transport: "TCP"},
-		{ID: "QmJkl...012", Name: "Diana", Status: "online", Latency: 23, Transport: "QUIC"},
+	app, err := application.New(nil)
+	if err != nil {
+		return fmt.Errorf("앱 생성 실패: %w", err)
 	}
+
+	node := app.Node()
+	if node == nil {
+		fmt.Println("❌ 클러스터가 초기화되지 않았습니다.")
+		fmt.Println("먼저 'agent-collab init' 또는 'agent-collab join'을 실행하세요.")
+		return nil
+	}
+
+	peers := node.ConnectedPeers()
 
 	fmt.Println("=== Connected Peers ===")
 	fmt.Printf("Total: %d peers\n", len(peers))
 	fmt.Println()
 
-	fmt.Printf("%-8s %-10s %-15s %-10s %8s  %s\n",
-		"STATUS", "NAME", "PEER ID", "TRANSPORT", "LATENCY", "SYNC")
-	fmt.Println("────────────────────────────────────────────────────────────────")
+	if len(peers) == 0 {
+		fmt.Println("연결된 peer가 없습니다.")
+		return nil
+	}
 
-	for _, p := range peers {
-		statusIcon := "●"
-		if p.Status == "syncing" {
-			statusIcon = "◐"
-		} else if p.Status == "offline" {
-			statusIcon = "○"
+	fmt.Printf("%-8s %-50s %s\n", "STATUS", "PEER ID", "ADDRESSES")
+	fmt.Println("─────────────────────────────────────────────────────────────────────────────────")
+
+	for _, peerID := range peers {
+		peerInfo := node.PeerInfo(peerID)
+		addrStr := "-"
+		if len(peerInfo.Addrs) > 0 {
+			addrStr = peerInfo.Addrs[0].String()
+			if len(addrStr) > 30 {
+				addrStr = addrStr[:27] + "..."
+			}
 		}
 
-		fmt.Printf("%-8s %-10s %-15s %-10s %6dms  %s\n",
-			statusIcon, p.Name, p.ID, p.Transport, p.Latency, "100%")
+		fmt.Printf("%-8s %-50s %s\n", "●", peerID.String(), addrStr)
 	}
 
 	return nil
 }
 
 func runPeersInfo(cmd *cobra.Command, args []string) error {
-	peerID := args[0]
+	peerIDStr := args[0]
 
-	// TODO: 실제 peer 정보 가져오기
-	fmt.Printf("=== Peer Info: %s ===\n", peerID)
-	fmt.Println()
-
-	info := map[string]string{
-		"Peer ID":     "QmAbc...123",
-		"Name":        "Alice",
-		"Status":      "● Online",
-		"Connected":   "2 hours ago",
-		"Transport":   "QUIC (UDP)",
-		"Address":     "/ip4/192.168.1.100/udp/4001/quic-v1",
-		"Latency":     "12ms (avg), 8ms (min), 23ms (max)",
-		"Messages":    "↑ 1,234  ↓ 2,345",
-		"Sync":        "100% (12,456 vectors)",
-		"Capabilities": "[embedding] [lock] [context]",
+	app, err := application.New(nil)
+	if err != nil {
+		return fmt.Errorf("앱 생성 실패: %w", err)
 	}
 
-	for k, v := range info {
-		fmt.Printf("  %-14s: %s\n", k, v)
+	node := app.Node()
+	if node == nil {
+		return fmt.Errorf("클러스터가 초기화되지 않았습니다")
+	}
+
+	// Parse peer ID
+	peerID, err := peer.Decode(peerIDStr)
+	if err != nil {
+		return fmt.Errorf("잘못된 peer ID: %w", err)
+	}
+
+	peerInfo := node.PeerInfo(peerID)
+
+	fmt.Printf("=== Peer Info: %s ===\n", peerID.String())
+	fmt.Println()
+
+	fmt.Printf("  %-14s: %s\n", "Peer ID", peerID.String())
+	fmt.Printf("  %-14s: %s\n", "Status", "● Online")
+
+	if len(peerInfo.Addrs) > 0 {
+		fmt.Printf("  %-14s:\n", "Addresses")
+		for _, addr := range peerInfo.Addrs {
+			fmt.Printf("    - %s\n", addr.String())
+		}
+	} else {
+		fmt.Printf("  %-14s: (no addresses)\n", "Addresses")
+	}
+
+	// Extract transport from first address
+	if len(peerInfo.Addrs) > 0 {
+		addrStr := peerInfo.Addrs[0].String()
+		transport := "TCP"
+		if strings.Contains(addrStr, "quic") {
+			transport = "QUIC"
+		} else if strings.Contains(addrStr, "webrtc") {
+			transport = "WebRTC"
+		} else if strings.Contains(addrStr, "ws") {
+			transport = "WebSocket"
+		}
+		fmt.Printf("  %-14s: %s\n", "Transport", transport)
 	}
 
 	return nil
 }
 
 func runPeersBan(cmd *cobra.Command, args []string) error {
-	peerID := args[0]
+	peerIDStr := args[0]
 
-	fmt.Printf("⚠️  Peer 차단: %s\n", peerID)
+	app, err := application.New(nil)
+	if err != nil {
+		return fmt.Errorf("앱 생성 실패: %w", err)
+	}
+
+	node := app.Node()
+	if node == nil {
+		return fmt.Errorf("클러스터가 초기화되지 않았습니다")
+	}
+
+	// Parse peer ID
+	peerID, err := peer.Decode(peerIDStr)
+	if err != nil {
+		return fmt.Errorf("잘못된 peer ID: %w", err)
+	}
+
+	fmt.Printf("⚠️  Peer 차단: %s\n", peerID.String())
 	fmt.Println()
 
-	// TODO: 확인 프롬프트
-	fmt.Println("✓ Peer가 차단되었습니다.")
-	fmt.Println("  이 peer는 더 이상 연결할 수 없습니다.")
+	// Note: libp2p doesn't have built-in ban functionality
+	// This would need to be implemented with connection gating
+	fmt.Println("⚠️  Peer 차단 기능은 아직 구현되지 않았습니다.")
+	fmt.Println("  향후 버전에서 지원될 예정입니다.")
 
 	return nil
 }

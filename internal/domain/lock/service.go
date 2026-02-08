@@ -258,3 +258,18 @@ type LockStats struct {
 	ActiveNegotiations int           `json:"active_negotiations"`
 	AverageTTL         time.Duration `json:"average_ttl"`
 }
+
+// HistoryEntry is a lock history entry.
+type HistoryEntry struct {
+	Timestamp  time.Time `json:"timestamp"`
+	Action     string    `json:"action"` // acquired, released, conflict, expired
+	LockID     string    `json:"lock_id"`
+	HolderID   string    `json:"holder_id"`
+	HolderName string    `json:"holder_name"`
+	Target     string    `json:"target"`
+}
+
+// GetHistory returns recent lock history.
+func (s *LockService) GetHistory(limit int) []*HistoryEntry {
+	return s.store.GetHistory(limit)
+}
