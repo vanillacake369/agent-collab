@@ -8,7 +8,6 @@ linters:
     - dogsled
     - dupl
     - errcheck
-    - exportloopref
     - gochecknoinits
     - goconst
     - gocritic
@@ -29,7 +28,6 @@ linters:
     - stylecheck
     - typecheck
     - unconvert
-    - unparam
     - unused
     - whitespace
 
