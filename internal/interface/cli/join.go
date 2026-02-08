@@ -1,7 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"time"
+
+	"agent-collab/internal/application"
 
 	"github.com/spf13/cobra"
 )
@@ -36,17 +40,39 @@ func runJoin(cmd *cobra.Command, args []string) error {
 	fmt.Println("🔗 클러스터 참여 중...")
 	fmt.Println()
 
-	// TODO: 토큰 파싱 및 연결 로직
-	_ = token
+	// 애플리케이션 생성
+	app, err := application.New(nil)
+	if err != nil {
+		return fmt.Errorf("앱 생성 실패: %w", err)
+	}
 
-	fmt.Printf("✓ 프로젝트 '%s' 참여 중...\n", "my-project") // TODO: 실제 프로젝트명
-	fmt.Printf("✓ Bootstrap peer 연결 중... (%d/%d 연결됨)\n", 3, 3)
-	fmt.Printf("✓ NAT 타입 감지: %s\n", "Full Cone NAT")
-	fmt.Printf("✓ %s 통해 연결 성공\n", "QUIC")
-	fmt.Printf("✓ 컨텍스트 동기화 완료 (%.1f MB)\n", 2.3)
-	fmt.Printf("✓ 현재 활성 peer: %d명\n", 4)
+	// 타임아웃 컨텍스트
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// 클러스터 참여
+	result, err := app.Join(ctx, token)
+	if err != nil {
+		return fmt.Errorf("클러스터 참여 실패: %w", err)
+	}
+
+	// 결과 출력
+	fmt.Printf("✓ 프로젝트 '%s' 참여 중...\n", result.ProjectName)
+	fmt.Printf("✓ 노드 ID: %s\n", result.NodeID)
+	fmt.Printf("✓ Bootstrap peer: %s\n", result.BootstrapPeer)
+	fmt.Printf("✓ 연결된 peer: %d명\n", result.ConnectedPeers)
 	fmt.Println()
+
+	// 앱 시작
+	if err := app.Start(); err != nil {
+		return fmt.Errorf("앱 시작 실패: %w", err)
+	}
+	defer app.Stop()
+
 	fmt.Println("클러스터 참여 완료!")
+	fmt.Println()
+	fmt.Println("대시보드를 실행하려면:")
+	fmt.Println("  agent-collab dashboard")
 
 	return nil
 }

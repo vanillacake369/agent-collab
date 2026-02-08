@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"agent-collab/internal/application"
+
 	"github.com/spf13/cobra"
 )
 
@@ -27,51 +29,23 @@ func init() {
 	statusCmd.Flags().BoolVarP(&statusWatch, "watch", "w", false, "실시간 갱신")
 }
 
-// ClusterStatus는 클러스터 상태 정보입니다.
-type ClusterStatus struct {
-	ProjectName string       `json:"project_name"`
-	NodeID      string       `json:"node_id"`
-	Status      string       `json:"status"`
-	Uptime      string       `json:"uptime"`
-	Peers       []PeerStatus `json:"peers"`
-	SyncHealth  float64      `json:"sync_health"`
-	ActiveLocks int          `json:"active_locks"`
-}
-
-// PeerStatus는 peer 상태 정보입니다.
-type PeerStatus struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-	Latency   int    `json:"latency_ms"`
-	Transport string `json:"transport"`
-}
-
 func runStatus(cmd *cobra.Command, args []string) error {
-	// TODO: 실제 상태 가져오기
-	status := &ClusterStatus{
-		ProjectName: "my-project",
-		NodeID:      "QmXx...Yy",
-		Status:      "connected",
-		Uptime:      "2h 34m",
-		SyncHealth:  98.5,
-		ActiveLocks: 2,
-		Peers: []PeerStatus{
-			{ID: "QmAbc...123", Name: "Alice", Status: "online", Latency: 12, Transport: "QUIC"},
-			{ID: "QmDef...456", Name: "Bob", Status: "online", Latency: 45, Transport: "WebRTC"},
-			{ID: "QmGhi...789", Name: "Charlie", Status: "syncing", Latency: 89, Transport: "TCP"},
-			{ID: "QmJkl...012", Name: "Diana", Status: "online", Latency: 23, Transport: "QUIC"},
-		},
+	// 애플리케이션 생성
+	app, err := application.New(nil)
+	if err != nil {
+		return fmt.Errorf("앱 생성 실패: %w", err)
 	}
+
+	status := app.GetStatus()
 
 	if statusWatch {
-		return runStatusWatch(status)
+		return runStatusWatch(app)
 	}
 
-	return printStatus(status)
+	return printAppStatus(status)
 }
 
-func printStatus(status *ClusterStatus) error {
+func printAppStatus(status *application.Status) error {
 	if statusJSON {
 		data, err := json.MarshalIndent(status, "", "  ")
 		if err != nil {
@@ -81,57 +55,68 @@ func printStatus(status *ClusterStatus) error {
 		return nil
 	}
 
-	// 일반 출력
-	fmt.Println("=== Cluster Status ===")
-	fmt.Printf("Project    : %s\n", status.ProjectName)
-	fmt.Printf("Node ID    : %s\n", status.NodeID)
-	fmt.Printf("Status     : %s\n", formatStatus(status.Status))
-	fmt.Printf("Uptime     : %s\n", status.Uptime)
-	fmt.Printf("Sync Health: %.1f%%\n", status.SyncHealth)
-	fmt.Printf("Active Locks: %d\n", status.ActiveLocks)
+	fmt.Println("📊 클러스터 상태")
 	fmt.Println()
 
-	fmt.Println("--- Peers ---")
-	for _, p := range status.Peers {
-		statusIcon := "●"
-		if p.Status == "syncing" {
-			statusIcon = "◐"
-		} else if p.Status == "offline" {
-			statusIcon = "○"
-		}
-		fmt.Printf("  %s %-10s %-15s %4dms  %s\n",
-			statusIcon, p.Name, p.ID, p.Latency, p.Transport)
+	if status.ProjectName == "" {
+		fmt.Println("❌ 초기화되지 않음")
+		fmt.Println()
+		fmt.Println("클러스터를 시작하려면:")
+		fmt.Println("  agent-collab init -p <project-name>  # 새 클러스터 생성")
+		fmt.Println("  agent-collab join <token>            # 기존 클러스터 참여")
+		return nil
 	}
+
+	// 프로젝트 정보
+	fmt.Printf("프로젝트: %s\n", status.ProjectName)
+	fmt.Printf("상태: ")
+	if status.Running {
+		fmt.Println("🟢 실행 중")
+	} else {
+		fmt.Println("🔴 중지됨")
+	}
+	fmt.Println()
+
+	// 노드 정보
+	if status.NodeID != "" {
+		fmt.Println("🔗 네트워크")
+		fmt.Printf("  노드 ID: %s\n", status.NodeID)
+		fmt.Printf("  연결된 피어: %d\n", status.PeerCount)
+		if len(status.Addresses) > 0 {
+			fmt.Println("  주소:")
+			for _, addr := range status.Addresses {
+				fmt.Printf("    - %s\n", addr)
+			}
+		}
+		fmt.Println()
+	}
+
+	// 락 정보
+	fmt.Println("🔒 락")
+	fmt.Printf("  전체 락: %d\n", status.LockCount)
+	fmt.Printf("  내 락: %d\n", status.MyLockCount)
+	fmt.Println()
+
+	// 동기화 정보
+	fmt.Println("🔄 동기화")
+	fmt.Printf("  델타 수: %d\n", status.DeltaCount)
+	fmt.Printf("  감시 파일: %d\n", status.WatchedFiles)
 
 	return nil
 }
 
-func runStatusWatch(status *ClusterStatus) error {
+func runStatusWatch(app *application.App) error {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	// 초기 출력
 	fmt.Print("\033[2J\033[H") // 화면 클리어
-	printStatus(status)
+	printAppStatus(app.GetStatus())
 
 	for range ticker.C {
-		// TODO: 상태 갱신
 		fmt.Print("\033[2J\033[H") // 화면 클리어
-		printStatus(status)
+		printAppStatus(app.GetStatus())
 	}
 
 	return nil
-}
-
-func formatStatus(status string) string {
-	switch status {
-	case "connected":
-		return "● Connected"
-	case "connecting":
-		return "◐ Connecting..."
-	case "disconnected":
-		return "○ Disconnected"
-	default:
-		return status
-	}
 }

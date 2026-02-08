@@ -1,7 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"time"
+
+	"agent-collab/internal/application"
 
 	"github.com/spf13/cobra"
 )
@@ -34,22 +38,41 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("🚀 클러스터 초기화 중...")
 	fmt.Println()
 
-	// TODO: 실제 초기화 로직 구현
-	// 1. 키 생성
+	// 애플리케이션 생성
+	app, err := application.New(nil)
+	if err != nil {
+		return fmt.Errorf("앱 생성 실패: %w", err)
+	}
+
+	// 타임아웃 컨텍스트
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// 초기화
+	result, err := app.Initialize(ctx, projectName)
+	if err != nil {
+		return fmt.Errorf("초기화 실패: %w", err)
+	}
+
+	// 결과 출력
 	fmt.Println("✓ 프로젝트 키 생성 완료")
-
-	// 2. Vector DB 초기화
-	fmt.Println("✓ 로컬 Vector DB 초기화 완료")
-
-	// 3. 코드베이스 인덱싱
-	fmt.Printf("✓ 코드베이스 인덱싱 완료 (%d 파일)\n", 0) // TODO: 실제 파일 수
-
-	// 4. 초대 토큰 생성
+	fmt.Printf("  키 경로: %s\n", result.KeyPath)
 	fmt.Println()
-	fmt.Println("초대 토큰:")
-	fmt.Println("  [토큰이 여기에 표시됩니다]") // TODO: 실제 토큰
+
+	fmt.Println("✓ P2P 노드 시작 완료")
+	fmt.Printf("  노드 ID: %s\n", result.NodeID)
+	fmt.Println("  주소:")
+	for _, addr := range result.Addresses {
+		fmt.Printf("    - %s\n", addr)
+	}
 	fmt.Println()
-	fmt.Println("이 토큰을 팀원에게 공유하세요.")
+
+	fmt.Println("📋 초대 토큰 (팀원에게 공유하세요):")
+	fmt.Println()
+	fmt.Printf("  %s\n", result.InviteToken)
+	fmt.Println()
+	fmt.Println("팀원은 다음 명령어로 클러스터에 참여할 수 있습니다:")
+	fmt.Printf("  agent-collab join %s\n", result.InviteToken)
 
 	return nil
 }

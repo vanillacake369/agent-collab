@@ -6,6 +6,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// PeerStatus는 peer 상태 정보입니다.
+type PeerStatus struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+	Latency   int    `json:"latency_ms"`
+	Transport string `json:"transport"`
+}
+
 var peersCmd = &cobra.Command{
 	Use:   "peers",
 	Short: "Peer 관리",
