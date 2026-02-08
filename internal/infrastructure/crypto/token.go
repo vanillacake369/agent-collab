@@ -142,10 +142,14 @@ func (t *SimpleInviteToken) IsExpired() bool {
 	return time.Now().Unix() > t.ExpiresAt
 }
 
-// Encode는 토큰을 문자열로 인코딩합니다.
-func (t *SimpleInviteToken) Encode() string {
-	data, _ := json.Marshal(t)
-	return base64.URLEncoding.EncodeToString(data)
+// Encode encodes the token to a base64 string.
+// Returns error if JSON marshaling fails.
+func (t *SimpleInviteToken) Encode() (string, error) {
+	data, err := json.Marshal(t)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal token: %w", err)
+	}
+	return base64.URLEncoding.EncodeToString(data), nil
 }
 
 // DecodeInviteToken은 문자열에서 토큰을 디코딩합니다.

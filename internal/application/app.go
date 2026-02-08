@@ -71,8 +71,8 @@ func New(cfg *Config) (*App, error) {
 		cfg = DefaultConfig()
 	}
 
-	// 데이터 디렉토리 생성
-	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
+	// 데이터 디렉토리 생성 (0700 for security - contains keys)
+	if err := os.MkdirAll(cfg.DataDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create data dir: %w", err)
 	}
 
@@ -139,11 +139,16 @@ func (a *App) Initialize(ctx context.Context, projectName string) (*InitResult, 
 		return nil, fmt.Errorf("failed to create invite token: %w", err)
 	}
 
+	tokenStr, err := token.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode invite token: %w", err)
+	}
+
 	return &InitResult{
 		ProjectName: projectName,
 		NodeID:      nodeIDStr,
 		Addresses:   addrStrs,
-		InviteToken: token.Encode(),
+		InviteToken: tokenStr,
 		KeyPath:     keyPath,
 	}, nil
 }
@@ -612,7 +617,7 @@ func (a *App) CreateInviteToken() (string, error) {
 		return "", err
 	}
 
-	return token.Encode(), nil
+	return token.Encode()
 }
 
 // InitResult는 초기화 결과입니다.
