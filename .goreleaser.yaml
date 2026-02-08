@@ -1,3 +1,6 @@
+# GoReleaser configuration for agent-collab
+# Documentation: https://goreleaser.com
+
 version: 2
 
 project_name: agent-collab
@@ -5,15 +8,17 @@ project_name: agent-collab
 before:
   hooks:
     - go mod tidy
+    - go generate ./...
 
 builds:
-  - main: ./cmd/agent-collab
+  - id: agent-collab
+    main: ./cmd/agent-collab
     binary: agent-collab
     env:
       - CGO_ENABLED=0
     goos:
-      - darwin
       - linux
+      - darwin
       - windows
     goarch:
       - amd64
@@ -23,34 +28,107 @@ builds:
       - -X main.version={{.Version}}
       - -X main.commit={{.Commit}}
       - -X main.date={{.Date}}
+      - -X main.builtBy=goreleaser
+    mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:
-  - format: tar.gz
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - id: default
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
     format_overrides:
       - goos: windows
         format: zip
     files:
       - README.md
-      - LICENSE
+      - LICENSE*
       - configs/default.yaml
+      - docs/*.md
 
 checksum:
-  name_template: 'checksums.txt'
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
 
 changelog:
   sort: asc
+  use: github
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
-      - '^chore:'
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "typo"
       - Merge pull request
       - Merge branch
+  groups:
+    - title: "🚀 Features"
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: "🐛 Bug Fixes"
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: "🔧 Refactoring"
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: "📚 Documentation"
+      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: "🔨 Other"
+      order: 999
 
 release:
   github:
-    owner: your-org
+    owner: "{{ .Env.GITHUB_OWNER }}"
     name: agent-collab
-  draft: false
+  draft: true
   prerelease: auto
+  mode: replace
+  header: |
+    ## agent-collab {{ .Version }}
+
+    Distributed P2P agent collaboration system for multi-agent development.
+
+  footer: |
+    ---
+
+    **Full Changelog**: https://github.com/{{ .Env.GITHUB_OWNER }}/agent-collab/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ### Quick Install
+
+    ```bash
+    # macOS/Linux
+    curl -sSL https://github.com/{{ .Env.GITHUB_OWNER }}/agent-collab/releases/download/{{ .Tag }}/agent-collab_{{ .Version }}_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m).tar.gz | tar xz
+    sudo mv agent-collab /usr/local/bin/
+
+    # Windows (PowerShell)
+    Invoke-WebRequest -Uri "https://github.com/{{ .Env.GITHUB_OWNER }}/agent-collab/releases/download/{{ .Tag }}/agent-collab_{{ .Version }}_windows_amd64.zip" -OutFile agent-collab.zip
+    Expand-Archive agent-collab.zip -DestinationPath .
+    ```
+
+nfpms:
+  - id: packages
+    package_name: agent-collab
+    vendor: agent-collab
+    homepage: "https://github.com/{{ .Env.GITHUB_OWNER }}/agent-collab"
+    maintainer: "agent-collab maintainers"
+    description: "Distributed P2P agent collaboration system"
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+    contents:
+      - src: ./configs/default.yaml
+        dst: /etc/agent-collab/config.yaml
+        type: config
+
+announce:
+  skip: true

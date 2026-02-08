@@ -1,76 +1,128 @@
-.PHONY: build test lint clean run deps
+.PHONY: build test lint clean run deps release release-snapshot
 
 VERSION := $(shell git describe --tags --always 2>/dev/null || echo "dev")
-LDFLAGS := -ldflags "-X main.version=$(VERSION)"
+COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)"
 BINARY := agent-collab
 
-# 기본 타겟
+# Default target
 all: deps build
 
-# 의존성 설치
+# Install dependencies
 deps:
 	go mod tidy
 	go mod download
 
-# 빌드
+# Production build
 build:
-	go build $(LDFLAGS) -o bin/$(BINARY) ./cmd/agent-collab
+	CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY) ./cmd/agent-collab
 
-# 개발용 빌드 (빠른 컴파일)
+# Development build (fast compile)
 build-dev:
 	go build -o bin/$(BINARY) ./cmd/agent-collab
 
-# 실행
+# Run
 run: build-dev
 	./bin/$(BINARY)
 
-# 대시보드 실행
+# Run dashboard
 dashboard: build-dev
 	./bin/$(BINARY) dashboard
 
-# 테스트
+# Run tests
 test:
 	go test -v -race ./...
 
-# 테스트 커버리지
+# Run tests with coverage
 test-coverage:
 	go test -v -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report: coverage.html"
 
-# 린트
+# Run E2E tests
+test-e2e:
+	go test -v -race -tags=e2e ./tests/e2e/...
+
+# Lint
 lint:
 	golangci-lint run
 
-# 포맷
+# Format
 fmt:
 	go fmt ./...
 	goimports -w .
 
-# 클린
+# Clean build artifacts
 clean:
 	rm -rf bin/
+	rm -rf dist/
 	rm -f coverage.out coverage.html
 
-# 크로스 컴파일
+# Cross compile all platforms
 build-all:
-	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY)-darwin-amd64 ./cmd/agent-collab
-	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o bin/$(BINARY)-darwin-arm64 ./cmd/agent-collab
-	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY)-linux-amd64 ./cmd/agent-collab
-	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY)-windows-amd64.exe ./cmd/agent-collab
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-darwin-amd64 ./cmd/agent-collab
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-darwin-arm64 ./cmd/agent-collab
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-linux-amd64 ./cmd/agent-collab
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-linux-arm64 ./cmd/agent-collab
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-windows-amd64.exe ./cmd/agent-collab
 
-# 설치 (로컬)
+# Install locally
 install: build
 	cp bin/$(BINARY) $(GOPATH)/bin/
 
-# 도움말
+# Release (requires goreleaser)
+release:
+	@if [ -z "$(GITHUB_TOKEN)" ]; then echo "GITHUB_TOKEN not set"; exit 1; fi
+	goreleaser release --clean
+
+# Snapshot release (no publish)
+release-snapshot:
+	goreleaser release --snapshot --clean
+
+# Check goreleaser config
+release-check:
+	goreleaser check
+
+# Generate (if any go:generate directives exist)
+generate:
+	go generate ./...
+
+# Security scan
+security:
+	gosec ./...
+	govulncheck ./...
+
+# Help
 help:
-	@echo "사용 가능한 타겟:"
-	@echo "  deps        - 의존성 설치"
-	@echo "  build       - 프로덕션 빌드"
-	@echo "  build-dev   - 개발용 빌드"
-	@echo "  run         - 빌드 후 실행"
-	@echo "  dashboard   - TUI 대시보드 실행"
-	@echo "  test        - 테스트 실행"
-	@echo "  lint        - 린트 실행"
-	@echo "  clean       - 빌드 결과물 삭제"
-	@echo "  build-all   - 크로스 컴파일"
+	@echo "Available targets:"
+	@echo ""
+	@echo "  Build:"
+	@echo "    build           - Production build with optimizations"
+	@echo "    build-dev       - Development build (fast compile)"
+	@echo "    build-all       - Cross compile for all platforms"
+	@echo ""
+	@echo "  Run:"
+	@echo "    run             - Build and run"
+	@echo "    dashboard       - Run TUI dashboard"
+	@echo ""
+	@echo "  Test:"
+	@echo "    test            - Run unit tests"
+	@echo "    test-coverage   - Run tests with coverage report"
+	@echo "    test-e2e        - Run E2E tests"
+	@echo ""
+	@echo "  Quality:"
+	@echo "    lint            - Run linter"
+	@echo "    fmt             - Format code"
+	@echo "    security        - Run security scans"
+	@echo ""
+	@echo "  Release:"
+	@echo "    release         - Create release (requires GITHUB_TOKEN)"
+	@echo "    release-snapshot- Create local snapshot release"
+	@echo "    release-check   - Validate goreleaser config"
+	@echo ""
+	@echo "  Other:"
+	@echo "    deps            - Install dependencies"
+	@echo "    install         - Install binary to GOPATH"
+	@echo "    clean           - Clean build artifacts"
+	@echo "    generate        - Run go generate"
