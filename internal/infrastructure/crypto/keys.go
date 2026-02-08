@@ -35,7 +35,7 @@ func GenerateKeyPair() (*KeyPair, error) {
 
 	peerID, err := peer.IDFromPublicKey(pubKey)
 	if err != nil {
-		return nil, fmt.Errorf("Peer ID 생성 실패: %w", err)
+		return nil, fmt.Errorf("peer ID 생성 실패: %w", err)
 	}
 
 	return &KeyPair{
@@ -120,7 +120,7 @@ func LoadKeyPair(path string) (*KeyPair, error) {
 
 	peerID, err := peer.IDFromPublicKey(pubKey)
 	if err != nil {
-		return nil, fmt.Errorf("Peer ID 생성 실패: %w", err)
+		return nil, fmt.Errorf("peer ID 생성 실패: %w", err)
 	}
 
 	return &KeyPair{

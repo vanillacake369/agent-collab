@@ -90,7 +90,7 @@ type googleBatchEmbedResponse struct {
 
 func (p *GoogleProvider) Embed(ctx context.Context, texts []string) ([][]float32, int, error) {
 	if p.config.APIKey == "" {
-		return nil, 0, fmt.Errorf("Google API key not set (set GOOGLE_API_KEY environment variable)")
+		return nil, 0, fmt.Errorf("google API key not set (set GOOGLE_API_KEY environment variable)")
 	}
 
 	// Build batch request
