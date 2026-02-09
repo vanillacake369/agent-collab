@@ -94,16 +94,12 @@ func runMCPWithDaemon(ctx context.Context, client *daemon.Client) error {
 	// Create MCP server without a registry (daemon manages agents)
 	server := mcp.NewServer("agent-collab", "1.0.0", nil)
 
-	// Register daemon-connected tools
+	// Register daemon-connected tools (includes event tools that query daemon's event history)
 	mcp.RegisterDaemonTools(server, client)
 
-	// Create and start event handler
-	eventHandler := mcp.NewEventHandler(client)
-	eventHandler.Start(ctx)
-	defer eventHandler.Stop()
-
-	// Register event tools
-	mcp.RegisterEventTools(server, eventHandler)
+	// Note: We don't use RegisterEventTools here because MCP runs in stdio mode
+	// where each request is a new process, so EventHandler can't accumulate events.
+	// Instead, daemon_tools.go's get_events queries the daemon's persisted event history.
 
 	// Serve on stdio
 	return server.ServeStdio(ctx)
