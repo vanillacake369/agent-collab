@@ -55,10 +55,12 @@ type App struct {
 
 // Config는 애플리케이션 설정입니다.
 type Config struct {
-	ProjectName string   `json:"project_name"`
-	DataDir     string   `json:"data_dir"`
-	ListenPort  int      `json:"listen_port"`
-	Bootstrap   []string `json:"bootstrap"`
+	ProjectName   string   `json:"project_name"`
+	DataDir       string   `json:"data_dir"`
+	ListenPort    int      `json:"listen_port"`
+	ListenAddrs   []string `json:"listen_addrs,omitempty"`   // 실제 바인딩된 주소들
+	Bootstrap     []string `json:"bootstrap"`                // Bootstrap peer 주소들
+	BootstrapPeer string   `json:"bootstrap_peer,omitempty"` // Bootstrap peer ID
 
 	// WireGuard VPN settings
 	WireGuard *WireGuardConfig `json:"wireguard,omitempty"`
@@ -182,12 +184,14 @@ func (a *App) InitializeWithOptions(ctx context.Context, opts *InitializeOptions
 		return nil, fmt.Errorf("failed to initialize Phase 3 components: %w", err)
 	}
 
-	// 6. Build address string list
+	// 6. Build address string list and save to config
 	addrs := a.node.Addrs()
 	addrStrs := make([]string, len(addrs))
 	for i, addr := range addrs {
 		addrStrs[i] = addr.String()
 	}
+	// Save the actual listen addresses for daemon restart
+	a.config.ListenAddrs = addrStrs
 
 	// 7. Create invite token
 	var tokenStr string
@@ -331,10 +335,30 @@ func (a *App) LoadFromConfig(ctx context.Context) error {
 	}
 	a.keyPair = keyPair
 
-	// Create libp2p node
+	// Create libp2p node with saved listen addresses
 	nodeConfig := libp2p.DefaultConfig()
 	nodeConfig.PrivateKey = keyPair.PrivateKey
 	nodeConfig.ProjectID = a.config.ProjectName
+
+	// Use saved listen addresses if available (to keep same ports)
+	if len(a.config.ListenAddrs) > 0 {
+		nodeConfig.ListenAddrs = a.config.ListenAddrs
+	}
+
+	// Load bootstrap peers if configured
+	if len(a.config.Bootstrap) > 0 {
+		for _, addrStr := range a.config.Bootstrap {
+			ma, err := multiaddr.NewMultiaddr(addrStr)
+			if err != nil {
+				continue
+			}
+			peerInfo, err := peer.AddrInfoFromP2pAddr(ma)
+			if err != nil {
+				continue
+			}
+			nodeConfig.BootstrapPeers = append(nodeConfig.BootstrapPeers, *peerInfo)
+		}
+	}
 
 	node, err := libp2p.NewNode(ctx, nodeConfig)
 	if err != nil {
@@ -452,6 +476,20 @@ func (a *App) Join(ctx context.Context, tokenStr string) (*JoinResult, error) {
 		fmt.Printf("Bootstrap warning: %v\n", err)
 	}
 
+	// 9. Save listen addresses and bootstrap info to config
+	addrs := a.node.Addrs()
+	a.config.ListenAddrs = make([]string, len(addrs))
+	for i, addr := range addrs {
+		a.config.ListenAddrs[i] = addr.String()
+	}
+	a.config.Bootstrap = token.Addresses
+	a.config.BootstrapPeer = token.CreatorID
+
+	// Save config for daemon to load later
+	if err := a.saveConfig(); err != nil {
+		fmt.Printf("Warning: failed to save config: %v\n", err)
+	}
+
 	result := &JoinResult{
 		ProjectName:    token.ProjectName,
 		NodeID:         nodeIDStr,
@@ -536,6 +574,33 @@ func (a *App) Start() error {
 	a.ctx = ctx
 	a.cancel = cancel
 	a.running = true
+
+	// Bootstrap to peers if configured
+	if len(a.config.Bootstrap) > 0 && a.config.BootstrapPeer != "" {
+		// Parse bootstrap peer ID
+		bootstrapPeerID, err := peer.Decode(a.config.BootstrapPeer)
+		if err == nil {
+			var bootstrapAddrs []multiaddr.Multiaddr
+			for _, addrStr := range a.config.Bootstrap {
+				ma, err := multiaddr.NewMultiaddr(addrStr)
+				if err != nil {
+					continue
+				}
+				bootstrapAddrs = append(bootstrapAddrs, ma)
+			}
+			if len(bootstrapAddrs) > 0 {
+				bootstrapPeers := []peer.AddrInfo{{
+					ID:    bootstrapPeerID,
+					Addrs: bootstrapAddrs,
+				}}
+				go func() {
+					if err := a.node.Bootstrap(ctx, bootstrapPeers); err != nil {
+						fmt.Printf("Bootstrap warning: %v\n", err)
+					}
+				}()
+			}
+		}
+	}
 
 	// 동기화 관리자 시작
 	a.syncManager.Start(ctx)
