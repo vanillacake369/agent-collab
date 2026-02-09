@@ -265,6 +265,28 @@ func (c *Client) WatchFile(filePath string) error {
 	return nil
 }
 
+// ShareContext shares context content with the cluster and stores in vector DB.
+func (c *Client) ShareContext(filePath, content string, metadata map[string]any) (*ShareContextResponse, error) {
+	resp, err := c.post("/context/share", ShareContextRequest{
+		FilePath: filePath,
+		Content:  content,
+		Metadata: metadata,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result ShareContextResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	if result.Error != "" {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	return &result, nil
+}
+
 // Shutdown shuts down the daemon.
 func (c *Client) Shutdown() error {
 	resp, err := c.post("/shutdown", nil)
