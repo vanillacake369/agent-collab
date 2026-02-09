@@ -17,17 +17,20 @@ var initCmd = &cobra.Command{
 
 이 명령은 다음을 수행합니다:
   - 프로젝트 전용 libp2p 네트워크 ID 및 암호화 키 생성
+  - WireGuard VPN 인터페이스 설정 (기본 활성화)
   - 로컬 Vector DB 초기화
   - 현재 코드베이스의 첫 인덱싱
-  - 팀원 초대용 토큰 생성`,
+  - 팀원 초대용 토큰 생성
+
+WireGuard VPN은 기본적으로 활성화됩니다. 비활성화하려면 --no-wireguard 플래그를 사용하세요.`,
 	RunE: runInit,
 }
 
 var (
-	projectName     string
-	enableWireGuard bool
-	wgPort          int
-	wgSubnet        string
+	projectName      string
+	disableWireGuard bool
+	wgPort           int
+	wgSubnet         string
 )
 
 func init() {
@@ -36,16 +39,20 @@ func init() {
 	initCmd.Flags().StringVarP(&projectName, "project", "p", "", "프로젝트 이름 (필수)")
 	initCmd.MarkFlagRequired("project")
 
-	// WireGuard flags
-	initCmd.Flags().BoolVarP(&enableWireGuard, "wireguard", "w", false, "WireGuard VPN 활성화")
+	// WireGuard flags (enabled by default)
+	initCmd.Flags().BoolVar(&disableWireGuard, "no-wireguard", false, "WireGuard VPN 비활성화")
 	initCmd.Flags().IntVar(&wgPort, "wg-port", 51820, "WireGuard 포트")
 	initCmd.Flags().StringVar(&wgSubnet, "wg-subnet", "10.100.0.0/24", "VPN 서브넷")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
+	enableWireGuard := !disableWireGuard
+
 	fmt.Println("🚀 클러스터 초기화 중...")
 	if enableWireGuard {
 		fmt.Println("  (WireGuard VPN 활성화)")
+	} else {
+		fmt.Println("  (WireGuard VPN 비활성화)")
 	}
 	fmt.Println()
 
