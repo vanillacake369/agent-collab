@@ -1,10 +1,13 @@
 package tui
 
 import (
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"agent-collab/internal/interface/tui/mode"
 )
 
 // Update는 메시지를 처리하고 모델을 업데이트합니다.
@@ -17,35 +20,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.ready = true
 		m.updateViewSizes()
+		m.commandInput.Width = m.width - 10
+		// 크기 변경 시 화면 전체를 지우고 다시 그리기
+		// zellij/tmux fullscreen 같은 급격한 크기 변화에서 잔상 방지
+		return m, tea.ClearScreen
 
 	case tea.KeyMsg:
-		switch {
-		case key.Matches(msg, m.keys.Quit):
-			return m, tea.Quit
-
-		case key.Matches(msg, m.keys.Tab1):
-			m.activeTab = TabCluster
-		case key.Matches(msg, m.keys.Tab2):
-			m.activeTab = TabContext
-		case key.Matches(msg, m.keys.Tab3):
-			m.activeTab = TabLocks
-		case key.Matches(msg, m.keys.Tab4):
-			m.activeTab = TabTokens
-		case key.Matches(msg, m.keys.Tab5):
-			m.activeTab = TabPeers
-
-		case key.Matches(msg, m.keys.NextTab):
-			m.activeTab = Tab((int(m.activeTab) + 1) % 5)
-		case key.Matches(msg, m.keys.PrevTab):
-			m.activeTab = Tab((int(m.activeTab) + 4) % 5)
-
-		case key.Matches(msg, m.keys.Refresh):
-			cmds = append(cmds, m.fetchAllData())
+		// 모드별 키 처리
+		switch m.mode {
+		case mode.Normal:
+			return m.updateNormalMode(msg)
+		case mode.Command:
+			return m.updateCommandMode(msg)
+		case mode.Input:
+			return m.updateInputMode(msg)
+		case mode.Confirm:
+			return m.updateConfirmMode(msg)
+		case mode.Help:
+			return m.updateHelpMode(msg)
 		}
 
 	case TickMsg:
 		m.uptime = time.Since(m.startTime)
+		// 결과 타이머 감소
+		if m.showResult && m.resultTimer > 0 {
+			m.resultTimer--
+			if m.resultTimer == 0 {
+				m.ClearResult()
+			}
+		}
 		cmds = append(cmds, m.tick(), m.fetchMetrics())
+
+	case CommandResultMsg:
+		m.SetResult(msg.Result, msg.Err)
+		m.ExitToNormalMode()
 
 	case InitialDataMsg:
 		m.projectName = msg.ProjectName
@@ -88,6 +96,356 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// updateNormalMode는 Normal 모드에서 키를 처리합니다.
+func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	switch {
+	// 종료
+	case key.Matches(msg, m.keys.Quit):
+		return m, tea.Quit
+
+	// 명령 모드 진입
+	case key.Matches(msg, m.keys.CommandMode):
+		m.EnterCommandMode()
+		return m, nil
+
+	// 탭 전환
+	case key.Matches(msg, m.keys.Tab1):
+		m.activeTab = TabCluster
+	case key.Matches(msg, m.keys.Tab2):
+		m.activeTab = TabContext
+	case key.Matches(msg, m.keys.Tab3):
+		m.activeTab = TabLocks
+	case key.Matches(msg, m.keys.Tab4):
+		m.activeTab = TabTokens
+	case key.Matches(msg, m.keys.Tab5):
+		m.activeTab = TabPeers
+
+	case key.Matches(msg, m.keys.NextTab):
+		m.activeTab = Tab((int(m.activeTab) + 1) % 5)
+	case key.Matches(msg, m.keys.PrevTab):
+		m.activeTab = Tab((int(m.activeTab) + 4) % 5)
+
+	// 새로고침
+	case key.Matches(msg, m.keys.Refresh):
+		cmds = append(cmds, m.fetchAllData())
+
+	// 액션 단축키
+	case key.Matches(msg, m.keys.ActionInit):
+		m.EnterInputMode("프로젝트 이름", func(name string) error {
+			return m.executeInit(name)
+		})
+		return m, nil
+
+	case key.Matches(msg, m.keys.ActionJoin):
+		m.EnterInputMode("초대 토큰", func(token string) error {
+			return m.executeJoin(token)
+		})
+		return m, nil
+
+	case key.Matches(msg, m.keys.ActionLeave):
+		m.EnterConfirmMode("클러스터에서 탈퇴하시겠습니까?", ConfirmLeave, "")
+		return m, nil
+
+	// 도움말
+	case key.Matches(msg, m.keys.Help):
+		m.EnterHelpMode()
+		return m, nil
+
+	// 네비게이션 (탭 내 선택)
+	case key.Matches(msg, m.keys.Up):
+		m.navigateUp()
+	case key.Matches(msg, m.keys.Down):
+		m.navigateDown()
+
+	// 선택된 항목 액션
+	case key.Matches(msg, m.keys.Enter):
+		cmds = append(cmds, m.executeSelectedAction())
+
+	case key.Matches(msg, m.keys.Delete):
+		if m.activeTab == TabLocks && len(m.locksData.Locks) > 0 {
+			lockID := m.locksData.Locks[m.locksData.SelectedIndex].ID
+			m.EnterConfirmMode("락 '"+lockID+"'을 해제하시겠습니까?", ConfirmReleaseLock, lockID)
+		}
+	}
+
+	return m, tea.Batch(cmds...)
+}
+
+// updateCommandMode는 Command 모드에서 키를 처리합니다.
+func (m Model) updateCommandMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.ExitToNormalMode()
+		return m, nil
+
+	case "enter":
+		// 입력이 비어있고 선택된 힌트가 있으면 힌트 적용
+		if m.commandInput.Value() == "" && len(m.filteredHints) > 0 {
+			m.ApplySelectedHint()
+			return m, nil
+		}
+		cmd := m.executeCommand(m.commandInput.Value())
+		m.ExitToNormalMode()
+		return m, cmd
+
+	case "tab":
+		// Tab: 선택된 힌트로 자동완성
+		m.ApplySelectedHint()
+		return m, nil
+
+	case "up", "ctrl+p":
+		// 위쪽 화살표: 이전 힌트 선택
+		m.SelectPrevHint()
+		return m, nil
+
+	case "down", "ctrl+n":
+		// 아래쪽 화살표: 다음 힌트 선택
+		m.SelectNextHint()
+		return m, nil
+
+	default:
+		var cmd tea.Cmd
+		m.commandInput, cmd = m.commandInput.Update(msg)
+		// 입력이 변경되면 퍼지 매칭 업데이트
+		m.UpdateFilteredHints()
+		return m, cmd
+	}
+}
+
+// updateInputMode는 Input 모드에서 키를 처리합니다.
+func (m Model) updateInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Escape):
+		m.ExitToNormalMode()
+		return m, nil
+
+	case key.Matches(msg, m.keys.Enter):
+		value := m.commandInput.Value()
+		if value == "" {
+			m.inputError = "값을 입력해주세요"
+			return m, nil
+		}
+		if m.inputCallback != nil {
+			if err := m.inputCallback(value); err != nil {
+				m.inputError = err.Error()
+				return m, nil
+			}
+		}
+		m.ExitToNormalMode()
+		return m, nil
+
+	default:
+		var cmd tea.Cmd
+		m.commandInput, cmd = m.commandInput.Update(msg)
+		return m, cmd
+	}
+}
+
+// updateConfirmMode는 Confirm 모드에서 키를 처리합니다.
+func (m Model) updateConfirmMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Yes):
+		// 액션 타입에 따라 처리
+		actionType := m.confirmActionType
+		targetID := m.confirmTargetID
+
+		// 상태 초기화
+		m.confirmActionType = ConfirmNone
+		m.confirmTargetID = ""
+		m.ExitToNormalMode()
+
+		switch actionType {
+		case ConfirmLeave:
+			// 클러스터 탈퇴 시 TUI 종료
+			return m, tea.Quit
+		case ConfirmReleaseLock:
+			if err := m.executeReleaseLock(targetID); err != nil {
+				m.SetResult("", err)
+			}
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.No), key.Matches(msg, m.keys.Escape):
+		m.confirmActionType = ConfirmNone
+		m.confirmTargetID = ""
+		m.ExitToNormalMode()
+		return m, nil
+	}
+
+	return m, nil
+}
+
+// updateHelpMode는 Help 모드에서 키를 처리합니다.
+func (m Model) updateHelpMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// 아무 키나 누르면 Help 모드 종료
+	m.ExitToNormalMode()
+	return m, nil
+}
+
+// 네비게이션 헬퍼
+
+func (m *Model) navigateUp() {
+	switch m.activeTab {
+	case TabLocks:
+		if m.locksData.SelectedIndex > 0 {
+			m.locksData.SelectedIndex--
+		}
+	case TabPeers:
+		if m.peersData.SelectedIndex > 0 {
+			m.peersData.SelectedIndex--
+		}
+	}
+}
+
+func (m *Model) navigateDown() {
+	switch m.activeTab {
+	case TabLocks:
+		if m.locksData.SelectedIndex < len(m.locksData.Locks)-1 {
+			m.locksData.SelectedIndex++
+		}
+	case TabPeers:
+		if m.peersData.SelectedIndex < len(m.peersData.Peers)-1 {
+			m.peersData.SelectedIndex++
+		}
+	}
+}
+
+func (m *Model) executeSelectedAction() tea.Cmd {
+	switch m.activeTab {
+	case TabLocks:
+		if len(m.locksData.Locks) > 0 {
+			lock := m.locksData.Locks[m.locksData.SelectedIndex]
+			m.SetResult("Lock: "+lock.ID+" ("+lock.Holder+")", nil)
+		}
+	case TabPeers:
+		if len(m.peersData.Peers) > 0 {
+			peer := m.peersData.Peers[m.peersData.SelectedIndex]
+			m.SetResult("Peer: "+peer.Name+" ("+peer.ID+")", nil)
+		}
+	}
+	return nil
+}
+
+// 명령 실행
+
+func (m *Model) executeCommand(input string) tea.Cmd {
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return nil
+	}
+
+	cmd := parts[0]
+	args := parts[1:]
+
+	return func() tea.Msg {
+		var result string
+		var err error
+
+		switch cmd {
+		case "quit", "q":
+			return tea.QuitMsg{}
+
+		case "init":
+			if len(args) >= 2 && args[0] == "-p" {
+				err = m.executeInit(args[1])
+				result = "클러스터 초기화 완료"
+			} else {
+				err = nil
+				result = "사용법: init -p <project-name>"
+			}
+
+		case "join":
+			if len(args) >= 1 {
+				err = m.executeJoin(args[0])
+				result = "클러스터 참여 완료"
+			} else {
+				result = "사용법: join <token>"
+			}
+
+		case "leave":
+			err = m.executeLeave()
+			result = "클러스터 탈퇴 완료"
+
+		case "status":
+			result = "상태: 연결됨"
+
+		case "lock":
+			if len(args) >= 1 {
+				switch args[0] {
+				case "list":
+					result = "락 목록 표시"
+				case "release":
+					if len(args) >= 2 {
+						err = m.executeReleaseLock(args[1])
+						result = "락 해제 완료"
+					} else {
+						result = "사용법: lock release <lock-id>"
+					}
+				}
+			} else {
+				result = "사용법: lock [list|release]"
+			}
+
+		case "agents":
+			result = "에이전트 목록 표시"
+
+		case "peers":
+			result = "피어 목록 표시"
+
+		case "tokens":
+			result = "토큰 사용량 표시"
+
+		case "config":
+			result = "설정 표시"
+
+		case "help":
+			result = "도움말: q(종료), i(init), j(join), l(leave), 1-5(탭 전환), :(명령)"
+
+		default:
+			result = "알 수 없는 명령: " + cmd
+		}
+
+		return CommandResultMsg{Result: result, Err: err}
+	}
+}
+
+// 액션 실행 함수들
+
+func (m *Model) executeInit(projectName string) error {
+	// TODO: 실제 init 로직 연동
+	m.projectName = projectName
+	m.SetResult("프로젝트 '"+projectName+"' 초기화 완료", nil)
+	return nil
+}
+
+func (m *Model) executeJoin(token string) error {
+	// TODO: 실제 join 로직 연동
+	m.SetResult("클러스터 참여 완료 (토큰: "+token[:min(10, len(token))]+"...)", nil)
+	return nil
+}
+
+func (m *Model) executeLeave() error {
+	// TODO: 실제 leave 로직 연동
+	m.SetResult("클러스터 탈퇴 완료", nil)
+	return nil
+}
+
+func (m *Model) executeReleaseLock(lockID string) error {
+	// TODO: 실제 lock release 로직 연동
+	m.SetResult("락 '"+lockID+"' 해제 완료", nil)
+	return nil
+}
+
+// min 헬퍼
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // updateViewSizes는 뷰 크기를 업데이트합니다.
 func (m *Model) updateViewSizes() {
 	contentWidth := m.width - 4
@@ -114,13 +472,13 @@ func (m Model) fetchAllData() tea.Cmd {
 // fetchMetrics는 메트릭을 가져옵니다.
 func (m Model) fetchMetrics() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 메트릭 가져오기
+		// TODO: 실제 메트릭 가져오기 (daemon 연동)
 		return MetricsMsg{
-			CPUUsage:    2.3,
-			MemUsage:    45 * 1024 * 1024, // 45MB
-			NetUpload:   12 * 1024,        // 12KB/s
-			NetDownload: 8 * 1024,         // 8KB/s
-			TokensRate:  1200,             // 1.2K/hr
+			CPUUsage:    0,
+			MemUsage:    0,
+			NetUpload:   0,
+			NetDownload: 0,
+			TokensRate:  0,
 		}
 	}
 }
@@ -128,14 +486,9 @@ func (m Model) fetchMetrics() tea.Cmd {
 // fetchPeers는 peer 목록을 가져옵니다.
 func (m Model) fetchPeers() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 peer 목록 가져오기
+		// TODO: 실제 peer 목록 가져오기 (daemon 연동)
 		return PeersMsg{
-			Peers: []PeerInfo{
-				{ID: "QmAbc...123", Name: "Alice", Status: "online", Latency: 12, Transport: "QUIC", SyncPct: 100},
-				{ID: "QmDef...456", Name: "Bob", Status: "online", Latency: 45, Transport: "WebRTC", SyncPct: 100},
-				{ID: "QmGhi...789", Name: "Charlie", Status: "syncing", Latency: 89, Transport: "TCP", SyncPct: 82},
-				{ID: "QmJkl...012", Name: "Diana", Status: "online", Latency: 23, Transport: "QUIC", SyncPct: 100},
-			},
+			Peers: []PeerInfo{},
 		}
 	}
 }
@@ -143,12 +496,9 @@ func (m Model) fetchPeers() tea.Cmd {
 // fetchLocks는 락 목록을 가져옵니다.
 func (m Model) fetchLocks() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 락 목록 가져오기
+		// TODO: 실제 락 목록 가져오기 (daemon 연동)
 		return LocksMsg{
-			Locks: []LockInfo{
-				{ID: "lock-001", Holder: "Alice", Target: "src/auth/login.go:45-67", Intention: "리팩토링", TTL: 25},
-				{ID: "lock-002", Holder: "Bob", Target: "pkg/api/handler.go:120-145", Intention: "버그 수정", TTL: 18},
-			},
+			Locks: []LockInfo{},
 		}
 	}
 }
@@ -156,15 +506,11 @@ func (m Model) fetchLocks() tea.Cmd {
 // fetchContext는 컨텍스트 상태를 가져옵니다.
 func (m Model) fetchContext() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 컨텍스트 가져오기
+		// TODO: 실제 컨텍스트 가져오기 (daemon 연동)
 		return ContextMsg{
-			TotalEmbeddings: 12456,
-			DatabaseSize:    234 * 1024 * 1024, // 234MB
-			SyncProgress: map[string]float64{
-				"Alice":   100,
-				"Bob":     82,
-				"Charlie": 100,
-			},
+			TotalEmbeddings: 0,
+			DatabaseSize:    0,
+			SyncProgress:    map[string]float64{},
 		}
 	}
 }
@@ -172,21 +518,17 @@ func (m Model) fetchContext() tea.Cmd {
 // fetchTokens는 토큰 사용량을 가져옵니다.
 func (m Model) fetchTokens() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 토큰 사용량 가져오기
+		// TODO: 실제 토큰 사용량 가져오기 (daemon 연동)
 		return TokensMsg{
-			TodayUsed:  104521,
-			DailyLimit: 200000,
-			Breakdown: []TokenBreakdown{
-				{Category: "Embedding Generation", Tokens: 78234, Percent: 75, Cost: 0.078},
-				{Category: "Context Synchronization", Tokens: 21123, Percent: 20, Cost: 0.021},
-				{Category: "Lock Negotiation", Tokens: 5164, Percent: 5, Cost: 0.005},
-			},
-			HourlyData:  []float64{5000, 8000, 12000, 15000, 10000, 8000, 6000, 4000},
-			CostToday:   0.10,
-			CostWeek:    0.62,
-			CostMonth:   2.35,
-			TokensWeek:  623456,
-			TokensMonth: 2345678,
+			TodayUsed:   0,
+			DailyLimit:  200000, // 기본 한도
+			Breakdown:   []TokenBreakdown{},
+			HourlyData:  []float64{},
+			CostToday:   0,
+			CostWeek:    0,
+			CostMonth:   0,
+			TokensWeek:  0,
+			TokensMonth: 0,
 		}
 	}
 }
