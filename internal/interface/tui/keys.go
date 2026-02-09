@@ -9,7 +9,7 @@ type KeyMap struct {
 	Help    key.Binding
 	Refresh key.Binding
 
-	// 탭 전환
+	// 탭 전환 (숫자키만 사용)
 	Tab1    key.Binding
 	Tab2    key.Binding
 	Tab3    key.Binding
@@ -29,21 +29,13 @@ type KeyMap struct {
 	// 모드 전환
 	CommandMode key.Binding
 
-	// 액션 단축키
-	ActionInit   key.Binding
-	ActionJoin   key.Binding
-	ActionLeave  key.Binding
-	ActionStatus key.Binding
-	ActionAgents key.Binding
-	ActionLocks  key.Binding
-	ActionPeers  key.Binding
-	ActionTokens key.Binding
-	ActionConfig key.Binding
+	// 명령어 단축키 (init, join, leave만)
+	ActionInit  key.Binding
+	ActionJoin  key.Binding
+	ActionLeave key.Binding
 
 	// 컨텍스트 액션
 	Delete key.Binding
-	Copy   key.Binding
-	Edit   key.Binding
 
 	// 확인 대화상자
 	Yes key.Binding
@@ -67,7 +59,7 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("r", "새로고침"),
 		),
 
-		// 탭 전환
+		// 탭 전환 (숫자키만)
 		Tab1: key.NewBinding(
 			key.WithKeys("1"),
 			key.WithHelp("1", "Cluster"),
@@ -129,56 +121,24 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp(":", "명령"),
 		),
 
-		// 액션 단축키
+		// 명령어 단축키
 		ActionInit: key.NewBinding(
 			key.WithKeys("i"),
 			key.WithHelp("i", "Init"),
 		),
 		ActionJoin: key.NewBinding(
-			key.WithKeys("J"),
-			key.WithHelp("J", "Join"),
+			key.WithKeys("j"),
+			key.WithHelp("j", "Join"),
 		),
 		ActionLeave: key.NewBinding(
-			key.WithKeys("L"),
-			key.WithHelp("L", "Leave"),
-		),
-		ActionStatus: key.NewBinding(
-			key.WithKeys("s"),
-			key.WithHelp("s", "Status"),
-		),
-		ActionAgents: key.NewBinding(
-			key.WithKeys("a"),
-			key.WithHelp("a", "Agents"),
-		),
-		ActionLocks: key.NewBinding(
 			key.WithKeys("l"),
-			key.WithHelp("l", "Locks"),
-		),
-		ActionPeers: key.NewBinding(
-			key.WithKeys("p"),
-			key.WithHelp("p", "Peers"),
-		),
-		ActionTokens: key.NewBinding(
-			key.WithKeys("t"),
-			key.WithHelp("t", "Tokens"),
-		),
-		ActionConfig: key.NewBinding(
-			key.WithKeys("c"),
-			key.WithHelp("c", "Config"),
+			key.WithHelp("l", "Leave"),
 		),
 
 		// 컨텍스트 액션
 		Delete: key.NewBinding(
 			key.WithKeys("d"),
 			key.WithHelp("d", "삭제"),
-		),
-		Copy: key.NewBinding(
-			key.WithKeys("y"),
-			key.WithHelp("y", "복사"),
-		),
-		Edit: key.NewBinding(
-			key.WithKeys("e"),
-			key.WithHelp("e", "편집"),
 		),
 
 		// 확인 대화상자
@@ -203,7 +163,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Quit, k.Refresh, k.CommandMode, k.Help},
 		{k.Tab1, k.Tab2, k.Tab3, k.Tab4, k.Tab5},
-		{k.ActionInit, k.ActionJoin, k.ActionLeave, k.ActionStatus},
+		{k.ActionInit, k.ActionJoin, k.ActionLeave},
 		{k.Up, k.Down, k.Enter, k.Escape},
 	}
 }

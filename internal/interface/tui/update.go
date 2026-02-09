@@ -21,6 +21,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ready = true
 		m.updateViewSizes()
 		m.commandInput.Width = m.width - 10
+		// 크기 변경 시 화면 전체를 지우고 다시 그리기
+		// zellij/tmux fullscreen 같은 급격한 크기 변화에서 잔상 방지
+		return m, tea.ClearScreen
 
 	case tea.KeyMsg:
 		// 모드별 키 처리
@@ -33,6 +36,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateInputMode(msg)
 		case mode.Confirm:
 			return m.updateConfirmMode(msg)
+		case mode.Help:
+			return m.updateHelpMode(msg)
 		}
 
 	case TickMsg:
@@ -143,22 +148,10 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.EnterConfirmMode("클러스터에서 탈퇴하시겠습니까?", ConfirmLeave, "")
 		return m, nil
 
-	case key.Matches(msg, m.keys.ActionStatus):
-		m.activeTab = TabCluster
-		cmds = append(cmds, m.fetchAllData())
-
-	case key.Matches(msg, m.keys.ActionAgents):
-		// TODO: agents 탭 추가 또는 모달
-		m.SetResult("Agents 기능은 아직 구현 중입니다", nil)
-
-	case key.Matches(msg, m.keys.ActionLocks):
-		m.activeTab = TabLocks
-
-	case key.Matches(msg, m.keys.ActionPeers):
-		m.activeTab = TabPeers
-
-	case key.Matches(msg, m.keys.ActionTokens):
-		m.activeTab = TabTokens
+	// 도움말
+	case key.Matches(msg, m.keys.Help):
+		m.EnterHelpMode()
+		return m, nil
 
 	// 네비게이션 (탭 내 선택)
 	case key.Matches(msg, m.keys.Up):
@@ -182,19 +175,41 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateCommandMode는 Command 모드에서 키를 처리합니다.
 func (m Model) updateCommandMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, m.keys.Escape):
+	switch msg.String() {
+	case "esc":
 		m.ExitToNormalMode()
 		return m, nil
 
-	case key.Matches(msg, m.keys.Enter):
+	case "enter":
+		// 입력이 비어있고 선택된 힌트가 있으면 힌트 적용
+		if m.commandInput.Value() == "" && len(m.filteredHints) > 0 {
+			m.ApplySelectedHint()
+			return m, nil
+		}
 		cmd := m.executeCommand(m.commandInput.Value())
 		m.ExitToNormalMode()
 		return m, cmd
 
+	case "tab":
+		// Tab: 선택된 힌트로 자동완성
+		m.ApplySelectedHint()
+		return m, nil
+
+	case "up", "ctrl+p":
+		// 위쪽 화살표: 이전 힌트 선택
+		m.SelectPrevHint()
+		return m, nil
+
+	case "down", "ctrl+n":
+		// 아래쪽 화살표: 다음 힌트 선택
+		m.SelectNextHint()
+		return m, nil
+
 	default:
 		var cmd tea.Cmd
 		m.commandInput, cmd = m.commandInput.Update(msg)
+		// 입력이 변경되면 퍼지 매칭 업데이트
+		m.UpdateFilteredHints()
 		return m, cmd
 	}
 }
@@ -262,6 +277,13 @@ func (m Model) updateConfirmMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateHelpMode는 Help 모드에서 키를 처리합니다.
+func (m Model) updateHelpMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// 아무 키나 누르면 Help 모드 종료
+	m.ExitToNormalMode()
+	return m, nil
+}
+
 // 네비게이션 헬퍼
 
 func (m *Model) navigateUp() {
@@ -323,7 +345,7 @@ func (m *Model) executeCommand(input string) tea.Cmd {
 
 		switch cmd {
 		case "quit", "q":
-			return tea.Quit
+			return tea.QuitMsg{}
 
 		case "init":
 			if len(args) >= 2 && args[0] == "-p" {
@@ -379,7 +401,7 @@ func (m *Model) executeCommand(input string) tea.Cmd {
 			result = "설정 표시"
 
 		case "help":
-			result = "도움말: q(종료), i(init), J(join), L(leave), s(status), :(명령)"
+			result = "도움말: q(종료), i(init), j(join), l(leave), 1-5(탭 전환), :(명령)"
 
 		default:
 			result = "알 수 없는 명령: " + cmd

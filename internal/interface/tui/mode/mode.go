@@ -12,6 +12,8 @@ const (
 	Input
 	// Confirm은 확인 대화상자 모드입니다.
 	Confirm
+	// Help는 도움말 모드입니다 (? 키로 진입).
+	Help
 )
 
 // String은 모드 이름을 반환합니다.
@@ -25,6 +27,8 @@ func (m Mode) String() string {
 		return "INPUT"
 	case Confirm:
 		return "CONFIRM"
+	case Help:
+		return "HELP"
 	default:
 		return "UNKNOWN"
 	}
