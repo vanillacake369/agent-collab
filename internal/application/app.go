@@ -705,10 +705,27 @@ func (a *App) setupMessageHandlers() {
 	})
 }
 
-// LockMessage is a message for lock operations.
-type LockMessage struct {
-	Type string          `json:"type"`
-	Data json.RawMessage `json:"data"`
+// LockMessageBase is a base type for determining message type.
+type LockMessageBase struct {
+	Type string `json:"type"`
+}
+
+// IntentMessageWrapper matches the format from lock.IntentMessage.
+type IntentMessageWrapper struct {
+	Type   string           `json:"type"`
+	Intent *lock.LockIntent `json:"intent"`
+}
+
+// AcquireMessageWrapper matches the format from lock.AcquireMessage.
+type AcquireMessageWrapper struct {
+	Type string            `json:"type"`
+	Lock *lock.SemanticLock `json:"lock"`
+}
+
+// ReleaseMessageWrapper matches the format from lock.ReleaseMessage.
+type ReleaseMessageWrapper struct {
+	Type   string `json:"type"`
+	LockID string `json:"lock_id"`
 }
 
 // processLockMessages processes incoming lock messages from P2P network.
@@ -735,44 +752,54 @@ func (a *App) processLockMessages(ctx context.Context) {
 			continue
 		}
 
-		var lockMsg LockMessage
-		if err := json.Unmarshal(msg.Data, &lockMsg); err != nil {
-			fmt.Printf("Error unmarshaling lock message: %v\n", err)
+		// First, determine the message type
+		var baseMsg LockMessageBase
+		if err := json.Unmarshal(msg.Data, &baseMsg); err != nil {
+			fmt.Printf("Error unmarshaling lock message type: %v\n", err)
 			continue
 		}
 
-		switch lockMsg.Type {
-		case "intent":
-			var intent lock.LockIntent
-			if err := json.Unmarshal(lockMsg.Data, &intent); err != nil {
+		switch baseMsg.Type {
+		case "lock_intent":
+			var intentMsg IntentMessageWrapper
+			if err := json.Unmarshal(msg.Data, &intentMsg); err != nil {
 				fmt.Printf("Error unmarshaling lock intent: %v\n", err)
 				continue
 			}
-			if err := a.lockService.HandleRemoteLockIntent(&intent); err != nil {
+			if intentMsg.Intent == nil {
+				fmt.Printf("Received lock_intent with nil intent\n")
+				continue
+			}
+			if err := a.lockService.HandleRemoteLockIntent(intentMsg.Intent); err != nil {
 				fmt.Printf("Error handling lock intent: %v\n", err)
 			}
 
-		case "acquired":
-			var semanticLock lock.SemanticLock
-			if err := json.Unmarshal(lockMsg.Data, &semanticLock); err != nil {
+		case "lock_acquired":
+			var acquireMsg AcquireMessageWrapper
+			if err := json.Unmarshal(msg.Data, &acquireMsg); err != nil {
 				fmt.Printf("Error unmarshaling acquired lock: %v\n", err)
 				continue
 			}
-			if err := a.lockService.HandleRemoteLockAcquired(&semanticLock); err != nil {
+			if acquireMsg.Lock == nil {
+				fmt.Printf("Received lock_acquired with nil lock\n")
+				continue
+			}
+			if err := a.lockService.HandleRemoteLockAcquired(acquireMsg.Lock); err != nil {
 				fmt.Printf("Error handling lock acquired: %v\n", err)
 			}
 
-		case "released":
-			var releaseMsg struct {
-				LockID string `json:"lock_id"`
-			}
-			if err := json.Unmarshal(lockMsg.Data, &releaseMsg); err != nil {
+		case "lock_released":
+			var releaseMsg ReleaseMessageWrapper
+			if err := json.Unmarshal(msg.Data, &releaseMsg); err != nil {
 				fmt.Printf("Error unmarshaling lock release: %v\n", err)
 				continue
 			}
 			if err := a.lockService.HandleRemoteLockReleased(releaseMsg.LockID); err != nil {
 				fmt.Printf("Error handling lock released: %v\n", err)
 			}
+
+		default:
+			fmt.Printf("Unknown lock message type: %s\n", baseMsg.Type)
 		}
 	}
 }
