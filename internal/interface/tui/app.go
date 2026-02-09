@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"agent-collab/internal/interface/daemon"
 	"agent-collab/internal/interface/tui/mode"
 )
 
@@ -175,13 +176,36 @@ func (m Model) tick() tea.Cmd {
 
 // fetchInitialData는 초기 데이터를 가져옵니다.
 func (m Model) fetchInitialData() tea.Cmd {
-	return func() tea.Msg {
-		// TODO: 실제 데이터 가져오기 (daemon 연동)
-		return InitialDataMsg{
-			ProjectName: "(미연결)",
-			NodeID:      "-",
-			PeerCount:   0,
-			SyncHealth:  0,
-		}
-	}
+	return tea.Batch(
+		func() tea.Msg {
+			client := daemon.NewClient()
+			if !client.IsRunning() {
+				return InitialDataMsg{
+					ProjectName: "(데몬 미실행)",
+					NodeID:      "-",
+					PeerCount:   0,
+					SyncHealth:  0,
+				}
+			}
+
+			status, err := client.Status()
+			if err != nil {
+				return InitialDataMsg{
+					ProjectName: "(연결 실패)",
+					NodeID:      "-",
+					PeerCount:   0,
+					SyncHealth:  0,
+				}
+			}
+
+			return InitialDataMsg{
+				ProjectName: status.ProjectName,
+				NodeID:      status.NodeID,
+				PeerCount:   status.PeerCount,
+				SyncHealth:  100, // TODO: 실제 sync health 계산
+			}
+		},
+		m.fetchPeers(),
+		m.fetchLocks(),
+	)
 }
