@@ -101,6 +101,15 @@ func printAppStatus(status *application.Status) error {
 	fmt.Println("🔄 동기화")
 	fmt.Printf("  델타 수: %d\n", status.DeltaCount)
 	fmt.Printf("  감시 파일: %d\n", status.WatchedFiles)
+	fmt.Println()
+
+	// WireGuard VPN 정보
+	if status.WireGuardEnabled {
+		fmt.Println("🔐 WireGuard VPN")
+		fmt.Printf("  VPN IP: %s\n", status.WireGuardIP)
+		fmt.Printf("  Endpoint: %s\n", status.WireGuardEndpoint)
+		fmt.Printf("  VPN 피어: %d\n", status.WireGuardPeerCount)
+	}
 
 	return nil
 }

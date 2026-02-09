@@ -166,3 +166,134 @@ func DecodeInviteToken(encoded string) (*SimpleInviteToken, error) {
 
 	return &token, nil
 }
+
+// WireGuardInfo contains WireGuard-specific information in tokens.
+type WireGuardInfo struct {
+	CreatorPublicKey string `json:"cpk"`           // Creator's WireGuard public key
+	CreatorEndpoint  string `json:"cep"`           // Creator's endpoint (IP:port)
+	Subnet           string `json:"sub"`           // Cluster subnet
+	CreatorIP        string `json:"cip"`           // Creator's VPN IP
+	JoinerIP         string `json:"jip,omitempty"` // Pre-allocated IP for joiner
+	PSK              string `json:"psk,omitempty"` // Optional pre-shared key
+}
+
+// WireGuardToken extends SimpleInviteToken with WireGuard support.
+type WireGuardToken struct {
+	// Base fields (compatible with SimpleInviteToken)
+	Addresses   []string `json:"addrs"`
+	ProjectName string   `json:"project"`
+	CreatorID   string   `json:"creator"`
+	CreatedAt   int64    `json:"created"`
+	ExpiresAt   int64    `json:"expires,omitempty"`
+
+	// WireGuard extension
+	WireGuard *WireGuardInfo `json:"wg,omitempty"`
+}
+
+// NewWireGuardToken creates a new WireGuard-enabled invite token.
+func NewWireGuardToken(
+	addresses []string,
+	projectName, creatorID string,
+	wgInfo *WireGuardInfo,
+) (*WireGuardToken, error) {
+	now := time.Now()
+	return &WireGuardToken{
+		Addresses:   addresses,
+		ProjectName: projectName,
+		CreatorID:   creatorID,
+		CreatedAt:   now.Unix(),
+		ExpiresAt:   now.Add(DefaultTokenTTL).Unix(),
+		WireGuard:   wgInfo,
+	}, nil
+}
+
+// NewWireGuardTokenWithTTL creates a new WireGuard-enabled token with custom expiration.
+func NewWireGuardTokenWithTTL(
+	addresses []string,
+	projectName, creatorID string,
+	wgInfo *WireGuardInfo,
+	ttl time.Duration,
+) (*WireGuardToken, error) {
+	now := time.Now()
+	return &WireGuardToken{
+		Addresses:   addresses,
+		ProjectName: projectName,
+		CreatorID:   creatorID,
+		CreatedAt:   now.Unix(),
+		ExpiresAt:   now.Add(ttl).Unix(),
+		WireGuard:   wgInfo,
+	}, nil
+}
+
+// HasWireGuard returns true if the token has WireGuard configuration.
+func (t *WireGuardToken) HasWireGuard() bool {
+	return t.WireGuard != nil && t.WireGuard.CreatorPublicKey != ""
+}
+
+// IsExpired checks if the token has expired.
+func (t *WireGuardToken) IsExpired() bool {
+	if t.ExpiresAt == 0 {
+		return false
+	}
+	return time.Now().Unix() > t.ExpiresAt
+}
+
+// Encode encodes the token to a base64 string.
+func (t *WireGuardToken) Encode() (string, error) {
+	data, err := json.Marshal(t)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal token: %w", err)
+	}
+	return base64.URLEncoding.EncodeToString(data), nil
+}
+
+// ToSimpleToken converts to SimpleInviteToken (strips WireGuard info).
+func (t *WireGuardToken) ToSimpleToken() *SimpleInviteToken {
+	return &SimpleInviteToken{
+		Addresses:   t.Addresses,
+		ProjectName: t.ProjectName,
+		CreatorID:   t.CreatorID,
+		CreatedAt:   t.CreatedAt,
+		ExpiresAt:   t.ExpiresAt,
+	}
+}
+
+// DecodeWireGuardToken decodes a WireGuard-enabled token from a base64 string.
+func DecodeWireGuardToken(encoded string) (*WireGuardToken, error) {
+	data, err := base64.URLEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("token decoding failed: %w", err)
+	}
+
+	var token WireGuardToken
+	if err := json.Unmarshal(data, &token); err != nil {
+		return nil, fmt.Errorf("token parsing failed: %w", err)
+	}
+
+	return &token, nil
+}
+
+// DecodeAnyToken attempts to decode a token as WireGuardToken first,
+// then falls back to SimpleInviteToken if no WireGuard info is present.
+// Returns the token and a boolean indicating if it has WireGuard support.
+func DecodeAnyToken(encoded string) (*WireGuardToken, bool, error) {
+	token, err := DecodeWireGuardToken(encoded)
+	if err != nil {
+		// Try as simple token for backwards compatibility
+		simpleToken, simpleErr := DecodeInviteToken(encoded)
+		if simpleErr != nil {
+			return nil, false, err // Return original error
+		}
+		// Convert to WireGuardToken
+		return &WireGuardToken{
+			Addresses:   simpleToken.Addresses,
+			ProjectName: simpleToken.ProjectName,
+			CreatorID:   simpleToken.CreatorID,
+			CreatedAt:   simpleToken.CreatedAt,
+			ExpiresAt:   simpleToken.ExpiresAt,
+			WireGuard:   nil,
+		}, false, nil
+	}
+
+	return token, token.HasWireGuard(), nil
+}

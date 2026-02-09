@@ -15,6 +15,7 @@ import (
 	"agent-collab/internal/infrastructure/crypto"
 	"agent-collab/internal/infrastructure/embedding"
 	"agent-collab/internal/infrastructure/network/libp2p"
+	"agent-collab/internal/infrastructure/network/wireguard"
 	"agent-collab/internal/infrastructure/storage/metrics"
 	"agent-collab/internal/infrastructure/storage/vector"
 
@@ -37,6 +38,9 @@ type App struct {
 	metricsStore *metrics.Store
 	embedService *embedding.Service
 
+	// WireGuard VPN (optional)
+	wgManager *wireguard.WireGuardManager
+
 	// Domain services
 	lockService   *lock.LockService
 	syncManager   *ctxsync.SyncManager
@@ -55,6 +59,31 @@ type Config struct {
 	DataDir     string   `json:"data_dir"`
 	ListenPort  int      `json:"listen_port"`
 	Bootstrap   []string `json:"bootstrap"`
+
+	// WireGuard VPN settings
+	WireGuard *WireGuardConfig `json:"wireguard,omitempty"`
+}
+
+// WireGuardConfig holds WireGuard VPN configuration.
+type WireGuardConfig struct {
+	Enabled             bool   `json:"enabled"`
+	ListenPort          int    `json:"listen_port"`
+	Subnet              string `json:"subnet"`
+	MTU                 int    `json:"mtu"`
+	PersistentKeepalive int    `json:"persistent_keepalive"`
+	InterfaceName       string `json:"interface_name"`
+}
+
+// DefaultWireGuardConfig returns default WireGuard configuration.
+func DefaultWireGuardConfig() *WireGuardConfig {
+	return &WireGuardConfig{
+		Enabled:             false,
+		ListenPort:          51820,
+		Subnet:              "10.100.0.0/24",
+		MTU:                 1420,
+		PersistentKeepalive: 25,
+		InterfaceName:       "wg-agent",
+	}
 }
 
 // DefaultConfig는 기본 설정을 반환합니다.
@@ -83,8 +112,21 @@ func New(cfg *Config) (*App, error) {
 	}, nil
 }
 
+// InitializeOptions holds options for cluster initialization.
+type InitializeOptions struct {
+	ProjectName     string
+	EnableWireGuard bool
+	WireGuardPort   int
+	Subnet          string
+}
+
 // Initialize는 클러스터를 초기화합니다.
 func (a *App) Initialize(ctx context.Context, projectName string) (*InitResult, error) {
+	return a.InitializeWithOptions(ctx, &InitializeOptions{ProjectName: projectName})
+}
+
+// InitializeWithOptions initializes the cluster with options.
+func (a *App) InitializeWithOptions(ctx context.Context, opts *InitializeOptions) (*InitResult, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -92,7 +134,10 @@ func (a *App) Initialize(ctx context.Context, projectName string) (*InitResult, 
 		return nil, fmt.Errorf("app is already running")
 	}
 
-	a.config.ProjectName = projectName
+	// Set context
+	a.ctx, a.cancel = context.WithCancel(ctx)
+
+	a.config.ProjectName = opts.ProjectName
 
 	// 1. 키 생성
 	keyPair, err := crypto.GenerateKeyPair()
@@ -107,10 +152,19 @@ func (a *App) Initialize(ctx context.Context, projectName string) (*InitResult, 
 		return nil, fmt.Errorf("failed to save keys: %w", err)
 	}
 
-	// 2. libp2p 노드 생성
+	// 2. Initialize WireGuard if enabled
+	var wgInfo *crypto.WireGuardInfo
+	if opts.EnableWireGuard {
+		wgInfo, err = a.initializeWireGuard(ctx, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize WireGuard: %w", err)
+		}
+	}
+
+	// 3. libp2p 노드 생성
 	nodeConfig := libp2p.DefaultConfig()
 	nodeConfig.PrivateKey = keyPair.PrivateKey
-	nodeConfig.ProjectID = projectName
+	nodeConfig.ProjectID = opts.ProjectName
 
 	node, err := libp2p.NewNode(ctx, nodeConfig)
 	if err != nil {
@@ -118,32 +172,45 @@ func (a *App) Initialize(ctx context.Context, projectName string) (*InitResult, 
 	}
 	a.node = node
 
-	// 3. Initialize domain services
+	// 4. Initialize domain services
 	nodeIDStr := a.node.ID().String()
-	a.lockService = lock.NewLockService(ctx, nodeIDStr, projectName+"-agent")
-	a.syncManager = ctxsync.NewSyncManager(nodeIDStr, projectName+"-agent")
+	a.lockService = lock.NewLockService(ctx, nodeIDStr, opts.ProjectName+"-agent")
+	a.syncManager = ctxsync.NewSyncManager(nodeIDStr, opts.ProjectName+"-agent")
 
-	// 4. Initialize Phase 3 components
-	if err := a.initPhase3Components(nodeIDStr, projectName+"-agent"); err != nil {
+	// 5. Initialize Phase 3 components
+	if err := a.initPhase3Components(nodeIDStr, opts.ProjectName+"-agent"); err != nil {
 		return nil, fmt.Errorf("failed to initialize Phase 3 components: %w", err)
 	}
 
-	// 5. Build address string list
+	// 6. Build address string list
 	addrs := a.node.Addrs()
 	addrStrs := make([]string, len(addrs))
 	for i, addr := range addrs {
 		addrStrs[i] = addr.String()
 	}
 
-	// 6. Create invite token
-	token, err := crypto.NewInviteToken(addrStrs, projectName, nodeIDStr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create invite token: %w", err)
-	}
-
-	tokenStr, err := token.Encode()
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode invite token: %w", err)
+	// 7. Create invite token
+	var tokenStr string
+	if wgInfo != nil {
+		// Create WireGuard-enabled token
+		token, err := crypto.NewWireGuardToken(addrStrs, opts.ProjectName, nodeIDStr, wgInfo)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create wireguard token: %w", err)
+		}
+		tokenStr, err = token.Encode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode wireguard token: %w", err)
+		}
+	} else {
+		// Create simple token
+		token, err := crypto.NewInviteToken(addrStrs, opts.ProjectName, nodeIDStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create invite token: %w", err)
+		}
+		tokenStr, err = token.Encode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode invite token: %w", err)
+		}
 	}
 
 	// Save config for daemon to load later
@@ -151,12 +218,74 @@ func (a *App) Initialize(ctx context.Context, projectName string) (*InitResult, 
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
-	return &InitResult{
-		ProjectName: projectName,
+	result := &InitResult{
+		ProjectName: opts.ProjectName,
 		NodeID:      nodeIDStr,
 		Addresses:   addrStrs,
 		InviteToken: tokenStr,
 		KeyPath:     keyPath,
+	}
+
+	// Add WireGuard info to result
+	if a.wgManager != nil {
+		result.WireGuardEnabled = true
+		result.WireGuardIP = a.wgManager.GetLocalIP()
+		result.WireGuardEndpoint = a.wgManager.GetEndpoint()
+	}
+
+	return result, nil
+}
+
+// initializeWireGuard initializes the WireGuard VPN manager.
+func (a *App) initializeWireGuard(ctx context.Context, opts *InitializeOptions) (*crypto.WireGuardInfo, error) {
+	// Set up WireGuard config
+	if a.config.WireGuard == nil {
+		a.config.WireGuard = DefaultWireGuardConfig()
+	}
+	a.config.WireGuard.Enabled = true
+
+	if opts.WireGuardPort > 0 {
+		a.config.WireGuard.ListenPort = opts.WireGuardPort
+	}
+	if opts.Subnet != "" {
+		a.config.WireGuard.Subnet = opts.Subnet
+	}
+
+	// Create manager
+	mgr := wireguard.NewManager(nil)
+	mgrCfg := &wireguard.ManagerConfig{
+		InterfaceName:       a.config.WireGuard.InterfaceName,
+		ListenPort:          a.config.WireGuard.ListenPort,
+		Subnet:              a.config.WireGuard.Subnet,
+		MTU:                 a.config.WireGuard.MTU,
+		PersistentKeepalive: a.config.WireGuard.PersistentKeepalive,
+		AutoDetectEndpoint:  true,
+	}
+
+	if err := mgr.Initialize(ctx, mgrCfg); err != nil {
+		return nil, fmt.Errorf("failed to initialize WireGuard manager: %w", err)
+	}
+
+	// Start the WireGuard interface
+	if err := mgr.Start(ctx); err != nil {
+		return nil, fmt.Errorf("failed to start WireGuard: %w", err)
+	}
+
+	a.wgManager = mgr
+
+	// Save WireGuard config
+	wgConfigPath := filepath.Join(a.config.DataDir, "wireguard.json")
+	if err := wireguard.SaveConfigFile(mgr.GetConfig().ToConfigFile(), wgConfigPath); err != nil {
+		return nil, fmt.Errorf("failed to save WireGuard config: %w", err)
+	}
+
+	// Build WireGuard info for token
+	keyPair := mgr.GetKeyPair()
+	return &crypto.WireGuardInfo{
+		CreatorPublicKey: keyPair.PublicKey,
+		CreatorEndpoint:  mgr.GetEndpoint(),
+		Subnet:           a.config.WireGuard.Subnet,
+		CreatorIP:        mgr.GetLocalIP(),
 	}, nil
 }
 
@@ -236,8 +365,11 @@ func (a *App) Join(ctx context.Context, tokenStr string) (*JoinResult, error) {
 		return nil, fmt.Errorf("app is already running")
 	}
 
-	// 1. Decode and validate token
-	token, err := crypto.DecodeInviteToken(tokenStr)
+	// Set context
+	a.ctx, a.cancel = context.WithCancel(ctx)
+
+	// 1. Decode and validate token (try WireGuard token first)
+	token, hasWireGuard, err := crypto.DecodeAnyToken(tokenStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid invite token: %w", err)
 	}
@@ -263,7 +395,15 @@ func (a *App) Join(ctx context.Context, tokenStr string) (*JoinResult, error) {
 	}
 	a.keyPair = keyPair
 
-	// 3. Bootstrap peer 주소 파싱
+	// 3. Initialize WireGuard if token has WireGuard info
+	if hasWireGuard && token.WireGuard != nil {
+		if err := a.joinWithWireGuard(ctx, token.WireGuard); err != nil {
+			// Log warning but continue with libp2p-only mode
+			fmt.Printf("Warning: WireGuard setup failed, using libp2p only: %v\n", err)
+		}
+	}
+
+	// 4. Bootstrap peer 주소 파싱
 	var bootstrapPeers []peer.AddrInfo
 	for _, addrStr := range token.Addresses {
 		ma, err := multiaddr.NewMultiaddr(addrStr)
@@ -285,7 +425,7 @@ func (a *App) Join(ctx context.Context, tokenStr string) (*JoinResult, error) {
 		bootstrapPeers = append(bootstrapPeers, *peerInfo)
 	}
 
-	// 4. libp2p 노드 생성
+	// 5. libp2p 노드 생성
 	nodeConfig := libp2p.DefaultConfig()
 	nodeConfig.PrivateKey = keyPair.PrivateKey
 	nodeConfig.ProjectID = token.ProjectName
@@ -297,27 +437,86 @@ func (a *App) Join(ctx context.Context, tokenStr string) (*JoinResult, error) {
 	}
 	a.node = node
 
-	// 5. Initialize domain services
+	// 6. Initialize domain services
 	nodeIDStr := a.node.ID().String()
 	a.lockService = lock.NewLockService(ctx, nodeIDStr, token.ProjectName+"-agent")
 	a.syncManager = ctxsync.NewSyncManager(nodeIDStr, token.ProjectName+"-agent")
 
-	// 6. Initialize Phase 3 components
+	// 7. Initialize Phase 3 components
 	if err := a.initPhase3Components(nodeIDStr, token.ProjectName+"-agent"); err != nil {
 		return nil, fmt.Errorf("failed to initialize Phase 3 components: %w", err)
 	}
 
-	// 7. Perform bootstrap
+	// 8. Perform bootstrap
 	if err := a.node.Bootstrap(ctx, bootstrapPeers); err != nil {
 		fmt.Printf("Bootstrap warning: %v\n", err)
 	}
 
-	return &JoinResult{
+	result := &JoinResult{
 		ProjectName:    token.ProjectName,
 		NodeID:         nodeIDStr,
 		BootstrapPeer:  token.CreatorID,
 		ConnectedPeers: len(a.node.ConnectedPeers()),
-	}, nil
+	}
+
+	// Add WireGuard info to result
+	if a.wgManager != nil {
+		result.WireGuardEnabled = true
+		result.WireGuardIP = a.wgManager.GetLocalIP()
+	}
+
+	return result, nil
+}
+
+// joinWithWireGuard sets up WireGuard VPN connection to the cluster.
+func (a *App) joinWithWireGuard(ctx context.Context, wgInfo *crypto.WireGuardInfo) error {
+	// Set up WireGuard config
+	if a.config.WireGuard == nil {
+		a.config.WireGuard = DefaultWireGuardConfig()
+	}
+	a.config.WireGuard.Enabled = true
+	a.config.WireGuard.Subnet = wgInfo.Subnet
+
+	// Create manager
+	mgr := wireguard.NewManager(nil)
+	mgrCfg := &wireguard.ManagerConfig{
+		InterfaceName:       a.config.WireGuard.InterfaceName,
+		ListenPort:          a.config.WireGuard.ListenPort,
+		Subnet:              wgInfo.Subnet,
+		MTU:                 a.config.WireGuard.MTU,
+		PersistentKeepalive: a.config.WireGuard.PersistentKeepalive,
+		AutoDetectEndpoint:  true,
+	}
+
+	if err := mgr.Initialize(ctx, mgrCfg); err != nil {
+		return fmt.Errorf("failed to initialize WireGuard manager: %w", err)
+	}
+
+	// Add creator as peer
+	creatorPeer := &wireguard.Peer{
+		PublicKey:           wgInfo.CreatorPublicKey,
+		Endpoint:            wgInfo.CreatorEndpoint,
+		AllowedIPs:          []string{wgInfo.CreatorIP},
+		PersistentKeepalive: a.config.WireGuard.PersistentKeepalive,
+	}
+	if err := mgr.AddPeer(creatorPeer); err != nil {
+		return fmt.Errorf("failed to add creator peer: %w", err)
+	}
+
+	// Start the WireGuard interface
+	if err := mgr.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start WireGuard: %w", err)
+	}
+
+	a.wgManager = mgr
+
+	// Save WireGuard config
+	wgConfigPath := filepath.Join(a.config.DataDir, "wireguard.json")
+	if err := wireguard.SaveConfigFile(mgr.GetConfig().ToConfigFile(), wgConfigPath); err != nil {
+		fmt.Printf("Warning: failed to save WireGuard config: %v\n", err)
+	}
+
+	return nil
 }
 
 // Start는 애플리케이션을 시작합니다.
@@ -388,6 +587,13 @@ func (a *App) Stop() error {
 
 	if a.vectorStore != nil {
 		a.vectorStore.Close()
+	}
+
+	// Stop WireGuard VPN
+	if a.wgManager != nil {
+		if err := a.wgManager.Stop(); err != nil {
+			fmt.Printf("Warning: failed to stop WireGuard: %v\n", err)
+		}
 	}
 
 	if a.node != nil {
@@ -588,6 +794,16 @@ func (a *App) GetStatus() *Status {
 		}
 	}
 
+	// WireGuard status
+	if a.wgManager != nil {
+		status.WireGuardEnabled = true
+		status.WireGuardIP = a.wgManager.GetLocalIP()
+		status.WireGuardEndpoint = a.wgManager.GetEndpoint()
+		if wgStatus, err := a.wgManager.GetStatus(); err == nil {
+			status.WireGuardPeerCount = len(wgStatus.Peers)
+		}
+	}
+
 	return status
 }
 
@@ -629,6 +845,11 @@ func (a *App) VectorStore() vector.Store {
 // EmbeddingService returns the embedding service.
 func (a *App) EmbeddingService() *embedding.Service {
 	return a.embedService
+}
+
+// WireGuardManager returns the WireGuard VPN manager (nil if not enabled).
+func (a *App) WireGuardManager() *wireguard.WireGuardManager {
+	return a.wgManager
 }
 
 // AgentRegistry returns the agent registry.
@@ -709,6 +930,11 @@ type InitResult struct {
 	Addresses   []string `json:"addresses"`
 	InviteToken string   `json:"invite_token"`
 	KeyPath     string   `json:"key_path"`
+
+	// WireGuard VPN info (optional)
+	WireGuardEnabled  bool   `json:"wireguard_enabled,omitempty"`
+	WireGuardIP       string `json:"wireguard_ip,omitempty"`
+	WireGuardEndpoint string `json:"wireguard_endpoint,omitempty"`
 }
 
 // JoinResult는 참여 결과입니다.
@@ -717,6 +943,10 @@ type JoinResult struct {
 	NodeID         string `json:"node_id"`
 	BootstrapPeer  string `json:"bootstrap_peer"`
 	ConnectedPeers int    `json:"connected_peers"`
+
+	// WireGuard VPN info (optional)
+	WireGuardEnabled bool   `json:"wireguard_enabled,omitempty"`
+	WireGuardIP      string `json:"wireguard_ip,omitempty"`
 }
 
 // Status holds the application status.
@@ -738,6 +968,12 @@ type Status struct {
 
 	// Vector store (Phase 3)
 	EmbeddingCount int64 `json:"embedding_count"`
+
+	// WireGuard VPN status
+	WireGuardEnabled   bool   `json:"wireguard_enabled,omitempty"`
+	WireGuardIP        string `json:"wireguard_ip,omitempty"`
+	WireGuardEndpoint  string `json:"wireguard_endpoint,omitempty"`
+	WireGuardPeerCount int    `json:"wireguard_peer_count,omitempty"`
 }
 
 // Ensure libp2pcrypto is used

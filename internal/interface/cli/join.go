@@ -61,6 +61,13 @@ func runJoin(cmd *cobra.Command, args []string) error {
 	fmt.Printf("✓ 노드 ID: %s\n", result.NodeID)
 	fmt.Printf("✓ Bootstrap peer: %s\n", result.BootstrapPeer)
 	fmt.Printf("✓ 연결된 peer: %d명\n", result.ConnectedPeers)
+
+	// WireGuard 정보 출력
+	if result.WireGuardEnabled {
+		fmt.Println()
+		fmt.Println("✓ WireGuard VPN 연결 완료")
+		fmt.Printf("  VPN IP: %s\n", result.WireGuardIP)
+	}
 	fmt.Println()
 
 	// 앱 시작
