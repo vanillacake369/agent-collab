@@ -24,7 +24,10 @@ var initCmd = &cobra.Command{
 }
 
 var (
-	projectName string
+	projectName     string
+	enableWireGuard bool
+	wgPort          int
+	wgSubnet        string
 )
 
 func init() {
@@ -32,10 +35,18 @@ func init() {
 
 	initCmd.Flags().StringVarP(&projectName, "project", "p", "", "프로젝트 이름 (필수)")
 	initCmd.MarkFlagRequired("project")
+
+	// WireGuard flags
+	initCmd.Flags().BoolVarP(&enableWireGuard, "wireguard", "w", false, "WireGuard VPN 활성화")
+	initCmd.Flags().IntVar(&wgPort, "wg-port", 51820, "WireGuard 포트")
+	initCmd.Flags().StringVar(&wgSubnet, "wg-subnet", "10.100.0.0/24", "VPN 서브넷")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("🚀 클러스터 초기화 중...")
+	if enableWireGuard {
+		fmt.Println("  (WireGuard VPN 활성화)")
+	}
 	fmt.Println()
 
 	// 애플리케이션 생성
@@ -48,8 +59,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// 초기화 옵션 설정
+	opts := &application.InitializeOptions{
+		ProjectName:     projectName,
+		EnableWireGuard: enableWireGuard,
+		WireGuardPort:   wgPort,
+		Subnet:          wgSubnet,
+	}
+
 	// 초기화
-	result, err := app.Initialize(ctx, projectName)
+	result, err := app.InitializeWithOptions(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("초기화 실패: %w", err)
 	}
@@ -66,6 +85,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("    - %s\n", addr)
 	}
 	fmt.Println()
+
+	// WireGuard 정보 출력
+	if result.WireGuardEnabled {
+		fmt.Println("✓ WireGuard VPN 활성화 완료")
+		fmt.Printf("  VPN IP: %s\n", result.WireGuardIP)
+		fmt.Printf("  Endpoint: %s\n", result.WireGuardEndpoint)
+		fmt.Println()
+	}
 
 	fmt.Println("📋 초대 토큰 (팀원에게 공유하세요):")
 	fmt.Println()
