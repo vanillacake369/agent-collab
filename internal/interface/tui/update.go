@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"agent-collab/internal/interface/daemon"
 	"agent-collab/internal/interface/tui/mode"
 )
 
@@ -49,7 +50,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ClearResult()
 			}
 		}
-		cmds = append(cmds, m.tick(), m.fetchMetrics())
+		// 주기적으로 데이터 갱신 (metrics, peers, status)
+		cmds = append(cmds, m.tick(), m.fetchMetrics(), m.fetchPeers(), m.fetchStatus())
 
 	case CommandResultMsg:
 		m.SetResult(msg.Result, msg.Err)
@@ -483,23 +485,99 @@ func (m Model) fetchMetrics() tea.Cmd {
 	}
 }
 
+// fetchStatus는 데몬 상태를 가져옵니다.
+func (m Model) fetchStatus() tea.Cmd {
+	return func() tea.Msg {
+		client := daemon.NewClient()
+		if !client.IsRunning() {
+			return InitialDataMsg{
+				ProjectName: "(데몬 미실행)",
+				NodeID:      "-",
+				PeerCount:   0,
+				SyncHealth:  0,
+			}
+		}
+
+		status, err := client.Status()
+		if err != nil {
+			return InitialDataMsg{
+				ProjectName: "(연결 실패)",
+				NodeID:      "-",
+				PeerCount:   0,
+				SyncHealth:  0,
+			}
+		}
+
+		return InitialDataMsg{
+			ProjectName: status.ProjectName,
+			NodeID:      status.NodeID,
+			PeerCount:   status.PeerCount,
+			SyncHealth:  100,
+		}
+	}
+}
+
 // fetchPeers는 peer 목록을 가져옵니다.
 func (m Model) fetchPeers() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 peer 목록 가져오기 (daemon 연동)
-		return PeersMsg{
-			Peers: []PeerInfo{},
+		client := daemon.NewClient()
+		if !client.IsRunning() {
+			return PeersMsg{Peers: []PeerInfo{}}
 		}
+
+		resp, err := client.ListPeers()
+		if err != nil {
+			return PeersMsg{Peers: []PeerInfo{}}
+		}
+
+		peers := make([]PeerInfo, len(resp.Peers))
+		for i, p := range resp.Peers {
+			addr := ""
+			if len(p.Addresses) > 0 {
+				addr = p.Addresses[0]
+			}
+			peers[i] = PeerInfo{
+				ID:        p.ID,
+				Name:      p.ID[:12] + "...", // Short ID as name
+				Status:    "connected",
+				Latency:   int(p.Latency),
+				Transport: addr,
+			}
+		}
+
+		return PeersMsg{Peers: peers}
 	}
 }
 
 // fetchLocks는 락 목록을 가져옵니다.
 func (m Model) fetchLocks() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 락 목록 가져오기 (daemon 연동)
-		return LocksMsg{
-			Locks: []LockInfo{},
+		client := daemon.NewClient()
+		if !client.IsRunning() {
+			return LocksMsg{Locks: []LockInfo{}}
 		}
+
+		resp, err := client.ListLocks()
+		if err != nil {
+			return LocksMsg{Locks: []LockInfo{}}
+		}
+
+		locks := make([]LockInfo, len(resp.Locks))
+		for i, l := range resp.Locks {
+			target := ""
+			if l.Target != nil {
+				target = l.Target.FilePath
+			}
+			locks[i] = LockInfo{
+				ID:        l.ID,
+				Holder:    l.HolderName,
+				Target:    target,
+				Intention: l.Intention,
+				TTL:       int(l.ExpiresAt.Sub(l.AcquiredAt).Seconds()),
+			}
+		}
+
+		return LocksMsg{Locks: locks}
 	}
 }
 
