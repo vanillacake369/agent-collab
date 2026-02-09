@@ -12,12 +12,13 @@ import (
 )
 
 var (
-	cfgFile string
-	verbose bool
-	version = "dev"
-	commit  = "unknown"
-	date    = "unknown"
-	builtBy = "unknown"
+	cfgFile  string
+	verbose  bool
+	startTab string
+	version  = "dev"
+	commit   = "unknown"
+	date     = "unknown"
+	builtBy  = "unknown"
 )
 
 var rootCmd = &cobra.Command{
