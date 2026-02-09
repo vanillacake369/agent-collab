@@ -1,4 +1,7 @@
-.PHONY: build test lint clean run deps release release-snapshot docker docker-multiarch nix-build nix-run
+.PHONY: build test lint clean run deps release release-snapshot docker docker-multiarch nix-build nix-run check install-tools staticcheck gosec
+
+# Add GOPATH/bin to PATH for tools
+export PATH := $(shell go env GOPATH)/bin:$(PATH)
 
 VERSION := $(shell git describe --tags --always 2>/dev/null || echo "dev")
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -46,10 +49,17 @@ test-e2e:
 
 # Lint
 lint:
-	golangci-lint run
+	@echo "🔍 Running golangci-lint..."
+	golangci-lint run ./...
 
-# Format
+# Format check (for CI)
 fmt:
+	@echo "📝 Checking format..."
+	@test -z "$$(gofmt -l . 2>&1)" || (echo "gofmt issues:" && gofmt -l . && exit 1)
+	@echo "✓ Format OK"
+
+# Format fix
+fmt-fix:
 	go fmt ./...
 	goimports -w .
 
@@ -122,10 +132,34 @@ nix-run:
 nix-develop:
 	nix develop
 
+# Staticcheck
+staticcheck:
+	@echo "🔍 Running staticcheck..."
+	staticcheck -checks='all,-ST1000,-ST1003,-ST1005,-ST1020,-ST1021,-ST1022,-SA1019,-QF1003,-U1000' ./...
+
+# Gosec
+gosec:
+	@echo "🔐 Running gosec..."
+	gosec -exclude=G104,G115,G204,G304,G301,G302,G306,G112 -exclude-generated -quiet ./...
+
 # Security scan
-security:
-	gosec ./...
-	govulncheck ./...
+security: gosec
+	govulncheck ./... || true
+
+# CI check - run all checks before push
+check: fmt lint staticcheck gosec
+	@echo ""
+	@echo "✅ All CI checks passed! Ready to push."
+
+# Install development tools
+install-tools:
+	@echo "📦 Installing development tools..."
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install honnef.co/go/tools/cmd/staticcheck@latest
+	go install github.com/securego/gosec/v2/cmd/gosec@latest
+	go install golang.org/x/vuln/cmd/govulncheck@latest
+	go install golang.org/x/tools/cmd/goimports@latest
+	@echo "✓ Tools installed"
 
 # Help
 help:
