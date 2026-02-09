@@ -244,6 +244,11 @@ func (n *Node) PeerInfo(id peer.ID) peer.AddrInfo {
 	return n.host.Peerstore().PeerInfo(id)
 }
 
+// Latency returns the latency to a peer.
+func (n *Node) Latency(id peer.ID) time.Duration {
+	return n.host.Peerstore().LatencyEWMA(id)
+}
+
 // Close는 노드를 종료합니다.
 func (n *Node) Close() error {
 	n.mu.Lock()

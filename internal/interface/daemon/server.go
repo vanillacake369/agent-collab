@@ -188,6 +188,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/lock/acquire", s.handleAcquireLock)
 	mux.HandleFunc("/lock/release", s.handleReleaseLock)
 	mux.HandleFunc("/lock/list", s.handleListLocks)
+	mux.HandleFunc("/peers/list", s.handleListPeers)
 	mux.HandleFunc("/embed", s.handleEmbed)
 	mux.HandleFunc("/search", s.handleSearch)
 	mux.HandleFunc("/agents/list", s.handleListAgents)
@@ -355,6 +356,36 @@ func (s *Server) handleListLocks(w http.ResponseWriter, r *http.Request) {
 
 	locks := lockService.ListLocks()
 	json.NewEncoder(w).Encode(ListLocksResponse{Locks: locks})
+}
+
+func (s *Server) handleListPeers(w http.ResponseWriter, r *http.Request) {
+	node := s.app.Node()
+	if node == nil {
+		json.NewEncoder(w).Encode(ListPeersResponse{Peers: []PeerInfo{}})
+		return
+	}
+
+	connectedPeers := node.ConnectedPeers()
+	peers := make([]PeerInfo, 0, len(connectedPeers))
+
+	for _, peerID := range connectedPeers {
+		info := node.PeerInfo(peerID)
+		addrs := make([]string, len(info.Addrs))
+		for i, addr := range info.Addrs {
+			addrs[i] = addr.String()
+		}
+
+		latency := node.Latency(peerID)
+
+		peers = append(peers, PeerInfo{
+			ID:        peerID.String(),
+			Addresses: addrs,
+			Latency:   latency.Milliseconds(),
+			Connected: true,
+		})
+	}
+
+	json.NewEncoder(w).Encode(ListPeersResponse{Peers: peers})
 }
 
 func (s *Server) handleEmbed(w http.ResponseWriter, r *http.Request) {
