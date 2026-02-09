@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -194,6 +195,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/agents/list", s.handleListAgents)
 	mux.HandleFunc("/context/watch", s.handleWatchFile)
 	mux.HandleFunc("/context/share", s.handleShareContext)
+	mux.HandleFunc("/events/list", s.handleListEvents)
 	mux.HandleFunc("/shutdown", s.handleShutdown)
 }
 
@@ -571,6 +573,29 @@ func (s *Server) handleShareContext(w http.ResponseWriter, r *http.Request) {
 		Success:    true,
 		DocumentID: doc.ID,
 		Message:    fmt.Sprintf("Context shared and stored (embedding: %d dims)", len(embedding)),
+	})
+}
+
+func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
+	limit := 20
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	eventType := r.URL.Query().Get("type")
+
+	var events []Event
+	if eventType != "" {
+		events = s.eventBus.GetEventsByType(EventType(eventType), limit)
+	} else {
+		events = s.eventBus.GetRecentEvents(limit)
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"events": events,
+		"count":  len(events),
 	})
 }
 
