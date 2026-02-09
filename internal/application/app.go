@@ -718,7 +718,7 @@ type IntentMessageWrapper struct {
 
 // AcquireMessageWrapper matches the format from lock.AcquireMessage.
 type AcquireMessageWrapper struct {
-	Type string            `json:"type"`
+	Type string             `json:"type"`
 	Lock *lock.SemanticLock `json:"lock"`
 }
 

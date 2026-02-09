@@ -147,8 +147,8 @@ type ShareContextRequest struct {
 
 // ShareContextResponse is the response after sharing context.
 type ShareContextResponse struct {
-	Success   bool   `json:"success"`
+	Success    bool   `json:"success"`
 	DocumentID string `json:"document_id,omitempty"`
-	Message   string `json:"message,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Message    string `json:"message,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
