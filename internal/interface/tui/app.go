@@ -99,12 +99,12 @@ func (m Model) tick() tea.Cmd {
 // fetchInitialData는 초기 데이터를 가져옵니다.
 func (m Model) fetchInitialData() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 데이터 가져오기
+		// TODO: 실제 데이터 가져오기 (daemon 연동)
 		return InitialDataMsg{
-			ProjectName: "my-project",
-			NodeID:      "QmXx...Yy",
-			PeerCount:   4,
-			SyncHealth:  98.5,
+			ProjectName: "(미연결)",
+			NodeID:      "-",
+			PeerCount:   0,
+			SyncHealth:  0,
 		}
 	}
 }

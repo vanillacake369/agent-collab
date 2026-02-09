@@ -440,13 +440,13 @@ func (m Model) fetchAllData() tea.Cmd {
 // fetchMetrics는 메트릭을 가져옵니다.
 func (m Model) fetchMetrics() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 메트릭 가져오기
+		// TODO: 실제 메트릭 가져오기 (daemon 연동)
 		return MetricsMsg{
-			CPUUsage:    2.3,
-			MemUsage:    45 * 1024 * 1024, // 45MB
-			NetUpload:   12 * 1024,        // 12KB/s
-			NetDownload: 8 * 1024,         // 8KB/s
-			TokensRate:  1200,             // 1.2K/hr
+			CPUUsage:    0,
+			MemUsage:    0,
+			NetUpload:   0,
+			NetDownload: 0,
+			TokensRate:  0,
 		}
 	}
 }
@@ -454,14 +454,9 @@ func (m Model) fetchMetrics() tea.Cmd {
 // fetchPeers는 peer 목록을 가져옵니다.
 func (m Model) fetchPeers() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 peer 목록 가져오기
+		// TODO: 실제 peer 목록 가져오기 (daemon 연동)
 		return PeersMsg{
-			Peers: []PeerInfo{
-				{ID: "QmAbc...123", Name: "Alice", Status: "online", Latency: 12, Transport: "QUIC", SyncPct: 100},
-				{ID: "QmDef...456", Name: "Bob", Status: "online", Latency: 45, Transport: "WebRTC", SyncPct: 100},
-				{ID: "QmGhi...789", Name: "Charlie", Status: "syncing", Latency: 89, Transport: "TCP", SyncPct: 82},
-				{ID: "QmJkl...012", Name: "Diana", Status: "online", Latency: 23, Transport: "QUIC", SyncPct: 100},
-			},
+			Peers: []PeerInfo{},
 		}
 	}
 }
@@ -469,12 +464,9 @@ func (m Model) fetchPeers() tea.Cmd {
 // fetchLocks는 락 목록을 가져옵니다.
 func (m Model) fetchLocks() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 락 목록 가져오기
+		// TODO: 실제 락 목록 가져오기 (daemon 연동)
 		return LocksMsg{
-			Locks: []LockInfo{
-				{ID: "lock-001", Holder: "Alice", Target: "src/auth/login.go:45-67", Intention: "리팩토링", TTL: 25},
-				{ID: "lock-002", Holder: "Bob", Target: "pkg/api/handler.go:120-145", Intention: "버그 수정", TTL: 18},
-			},
+			Locks: []LockInfo{},
 		}
 	}
 }
@@ -482,15 +474,11 @@ func (m Model) fetchLocks() tea.Cmd {
 // fetchContext는 컨텍스트 상태를 가져옵니다.
 func (m Model) fetchContext() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 컨텍스트 가져오기
+		// TODO: 실제 컨텍스트 가져오기 (daemon 연동)
 		return ContextMsg{
-			TotalEmbeddings: 12456,
-			DatabaseSize:    234 * 1024 * 1024, // 234MB
-			SyncProgress: map[string]float64{
-				"Alice":   100,
-				"Bob":     82,
-				"Charlie": 100,
-			},
+			TotalEmbeddings: 0,
+			DatabaseSize:    0,
+			SyncProgress:    map[string]float64{},
 		}
 	}
 }
@@ -498,21 +486,17 @@ func (m Model) fetchContext() tea.Cmd {
 // fetchTokens는 토큰 사용량을 가져옵니다.
 func (m Model) fetchTokens() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 토큰 사용량 가져오기
+		// TODO: 실제 토큰 사용량 가져오기 (daemon 연동)
 		return TokensMsg{
-			TodayUsed:  104521,
-			DailyLimit: 200000,
-			Breakdown: []TokenBreakdown{
-				{Category: "Embedding Generation", Tokens: 78234, Percent: 75, Cost: 0.078},
-				{Category: "Context Synchronization", Tokens: 21123, Percent: 20, Cost: 0.021},
-				{Category: "Lock Negotiation", Tokens: 5164, Percent: 5, Cost: 0.005},
-			},
-			HourlyData:  []float64{5000, 8000, 12000, 15000, 10000, 8000, 6000, 4000},
-			CostToday:   0.10,
-			CostWeek:    0.62,
-			CostMonth:   2.35,
-			TokensWeek:  623456,
-			TokensMonth: 2345678,
+			TodayUsed:   0,
+			DailyLimit:  200000, // 기본 한도
+			Breakdown:   []TokenBreakdown{},
+			HourlyData:  []float64{},
+			CostToday:   0,
+			CostWeek:    0,
+			CostMonth:   0,
+			TokensWeek:  0,
+			TokensMonth: 0,
 		}
 	}
 }
