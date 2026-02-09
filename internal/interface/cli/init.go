@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"agent-collab/internal/application"
-	"agent-collab/internal/interface/daemon"
 	"agent-collab/internal/infrastructure/network/wireguard/platform"
+	"agent-collab/internal/interface/daemon"
 
 	"github.com/spf13/cobra"
 )
