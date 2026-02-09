@@ -124,3 +124,16 @@ type JoinResponse struct {
 	ConnectedPeers int    `json:"connected_peers"`
 	Error          string `json:"error,omitempty"`
 }
+
+// PeerInfo contains information about a connected peer.
+type PeerInfo struct {
+	ID        string   `json:"id"`
+	Addresses []string `json:"addresses"`
+	Latency   int64    `json:"latency_ms"`
+	Connected bool     `json:"connected"`
+}
+
+// ListPeersResponse contains the list of connected peers.
+type ListPeersResponse struct {
+	Peers []PeerInfo `json:"peers"`
+}

@@ -232,6 +232,21 @@ func (c *Client) ListAgents() (*ListAgentsResponse, error) {
 	return &result, nil
 }
 
+// ListPeers returns connected peers.
+func (c *Client) ListPeers() (*ListPeersResponse, error) {
+	resp, err := c.get("/peers/list")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result ListPeersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // WatchFile starts watching a file.
 func (c *Client) WatchFile(filePath string) error {
 	resp, err := c.post("/context/watch", WatchFileRequest{FilePath: filePath})
