@@ -32,5 +32,3 @@ formatters:
       local-prefixes:
         - agent-collab
 
-issues:
-  exclude-use-default: false
