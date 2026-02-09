@@ -26,14 +26,14 @@ func NewManager(baseDir string) *Manager {
 	badgerDir := filepath.Join(baseDir, "badger")
 
 	opts := badger.DefaultOptions("").
-		WithLogger(nil).                 // Disable verbose logging
-		WithValueLogFileSize(64 << 20).  // 64MB value log
-		WithNumVersionsToKeep(1).        // Keep only latest version
-		WithCompactL0OnClose(true).      // Compact on close
-		WithDetectConflicts(false).      // No MVCC conflicts needed
-		WithNumCompactors(2).            // Background compaction workers
-		WithBlockCacheSize(32 << 20).    // 32MB block cache
-		WithIndexCacheSize(16 << 20)     // 16MB index cache
+		WithLogger(nil).                // Disable verbose logging
+		WithValueLogFileSize(64 << 20). // 64MB value log
+		WithNumVersionsToKeep(1).       // Keep only latest version
+		WithCompactL0OnClose(true).     // Compact on close
+		WithDetectConflicts(false).     // No MVCC conflicts needed
+		WithNumCompactors(2).           // Background compaction workers
+		WithBlockCacheSize(32 << 20).   // 32MB block cache
+		WithIndexCacheSize(16 << 20)    // 16MB index cache
 
 	return &Manager{
 		baseDir:   badgerDir,

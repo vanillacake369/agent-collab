@@ -207,7 +207,7 @@ func (m *MigrationManager) testBadgerDB() error {
 func (m *MigrationManager) markMigration(status string) error {
 	markerPath := filepath.Join(m.dataDir, ".migration_"+status)
 	content := fmt.Sprintf("Migration %s at %s\n", status, time.Now().Format(time.RFC3339))
-	return os.WriteFile(markerPath, []byte(content), 0640)
+	return os.WriteFile(markerPath, []byte(content), 0600)
 }
 
 // ListBackups returns a list of available backups.
@@ -291,8 +291,10 @@ func copyDir(src, dst string) error {
 }
 
 // copyFile copies a single file.
+// The src and dst paths are constructed internally from trusted base directories,
+// so path traversal is not a concern here.
 func copyFile(src, dst string) error {
-	srcFile, err := os.Open(src)
+	srcFile, err := os.Open(src) // #nosec G304 - paths are constructed from trusted base directories
 	if err != nil {
 		return err
 	}
@@ -303,7 +305,7 @@ func copyFile(src, dst string) error {
 		return err
 	}
 
-	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcInfo.Mode())
+	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcInfo.Mode()) // #nosec G304 - paths are constructed from trusted base directories
 	if err != nil {
 		return err
 	}
