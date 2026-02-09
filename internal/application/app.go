@@ -213,7 +213,7 @@ func (a *App) InitializeWithOptions(ctx context.Context, opts *InitializeOptions
 		}
 	}
 
-// Save config for daemon to load later
+	// Save config for daemon to load later
 	if err := a.saveConfig(); err != nil {
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}

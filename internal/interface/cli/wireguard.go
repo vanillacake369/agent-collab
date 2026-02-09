@@ -46,7 +46,7 @@ func runWGStatus(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Check platform support
-	p := platform.Get()
+	p := platform.GetPlatform()
 	if !p.IsSupported() {
 		fmt.Println("⚠ WireGuard가 이 시스템에서 지원되지 않습니다.")
 		fmt.Printf("  플랫폼: %s\n", p.Name())
@@ -79,7 +79,7 @@ func runWGPeers(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Check platform support
-	p := platform.Get()
+	p := platform.GetPlatform()
 	if !p.IsSupported() {
 		fmt.Println("⚠ WireGuard가 이 시스템에서 지원되지 않습니다.")
 		return nil
@@ -100,7 +100,7 @@ func runWGSupport(cmd *cobra.Command, args []string) error {
 	fmt.Println("==================")
 	fmt.Println()
 
-	p := platform.Get()
+	p := platform.GetPlatform()
 
 	fmt.Printf("플랫폼: %s\n", p.Name())
 

@@ -122,7 +122,7 @@ func TestIPAllocatorRelease(t *testing.T) {
 	}
 }
 
-func TestIPAllocatorGetAllocated(t *testing.T) {
+func TestIPAllocatorListAllocations(t *testing.T) {
 	alloc, err := NewIPAllocator("10.100.0.0/24")
 	if err != nil {
 		t.Fatalf("NewIPAllocator() error = %v", err)
@@ -133,9 +133,9 @@ func TestIPAllocatorGetAllocated(t *testing.T) {
 	alloc.Allocate("peer2")
 	alloc.Allocate("peer3")
 
-	allocated := alloc.GetAllocated()
+	allocated := alloc.ListAllocations()
 	if len(allocated) != 3 {
-		t.Errorf("GetAllocated() returned %d entries, want 3", len(allocated))
+		t.Errorf("ListAllocations() returned %d entries, want 3", len(allocated))
 	}
 
 	// Check specific allocations
@@ -146,7 +146,7 @@ func TestIPAllocatorGetAllocated(t *testing.T) {
 	}
 	for peer, wantIP := range expected {
 		if got := allocated[peer]; got != wantIP {
-			t.Errorf("GetAllocated()[%s] = %v, want %v", peer, got, wantIP)
+			t.Errorf("ListAllocations()[%s] = %v, want %v", peer, got, wantIP)
 		}
 	}
 }
@@ -187,15 +187,15 @@ func TestIPAllocatorGetIP(t *testing.T) {
 	}
 
 	// Before allocation
-	ip := alloc.GetIP("peer1")
-	if ip != "" {
-		t.Errorf("GetIP() before allocation = %v, want empty", ip)
+	ip, ok := alloc.GetIP("peer1")
+	if ok || ip != "" {
+		t.Errorf("GetIP() before allocation = %v, %v; want empty, false", ip, ok)
 	}
 
 	// After allocation
 	allocated, _ := alloc.Allocate("peer1")
-	ip = alloc.GetIP("peer1")
-	if ip != allocated {
-		t.Errorf("GetIP() = %v, want %v", ip, allocated)
+	ip, ok = alloc.GetIP("peer1")
+	if !ok || ip != allocated {
+		t.Errorf("GetIP() = %v, %v; want %v, true", ip, ok, allocated)
 	}
 }
