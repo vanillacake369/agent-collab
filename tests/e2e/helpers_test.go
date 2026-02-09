@@ -67,11 +67,11 @@ func (tc *TestCluster) CreateNode(name string) (*application.App, error) {
 // InitializeLeader initializes the first node as cluster leader.
 func (tc *TestCluster) InitializeLeader(ctx context.Context, projectName string) (*application.App, *application.InitResult, error) {
 	if len(tc.nodes) == 0 {
-		app, err := tc.CreateNode("leader")
+		_, err := tc.CreateNode("leader")
 		if err != nil {
 			return nil, nil, err
 		}
-		tc.nodes = append(tc.nodes, app)
+		// CreateNode already appends to tc.nodes, no need to append again
 	}
 
 	leader := tc.nodes[0]

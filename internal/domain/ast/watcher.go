@@ -18,6 +18,7 @@ type FileWatcher struct {
 	callbacks    []ChangeCallback
 	pollInterval time.Duration
 	stopCh       chan struct{}
+	stopOnce     sync.Once
 }
 
 // WatchedFile은 감시 중인 파일입니다.
@@ -159,7 +160,9 @@ func (w *FileWatcher) Start(ctx context.Context) {
 
 // Stop은 감시를 중단합니다.
 func (w *FileWatcher) Stop() {
-	close(w.stopCh)
+	w.stopOnce.Do(func() {
+		close(w.stopCh)
+	})
 }
 
 // checkChanges는 변경을 확인합니다.

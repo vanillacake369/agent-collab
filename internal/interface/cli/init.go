@@ -3,9 +3,11 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"agent-collab/internal/application"
+	"agent-collab/internal/infrastructure/network/wireguard/platform"
 
 	"github.com/spf13/cobra"
 )
@@ -17,14 +19,20 @@ var initCmd = &cobra.Command{
 
 이 명령은 다음을 수행합니다:
   - 프로젝트 전용 libp2p 네트워크 ID 및 암호화 키 생성
+  - WireGuard VPN 인터페이스 설정 (선택적)
   - 로컬 Vector DB 초기화
   - 현재 코드베이스의 첫 인덱싱
-  - 팀원 초대용 토큰 생성`,
+  - 팀원 초대용 토큰 생성
+
+WireGuard VPN을 사용하려면 --wireguard 플래그를 사용하세요 (관리자 권한 필요).`,
 	RunE: runInit,
 }
 
 var (
-	projectName string
+	projectName     string
+	enableWireGuard bool
+	wgPort          int
+	wgSubnet        string
 )
 
 func init() {
@@ -32,10 +40,50 @@ func init() {
 
 	initCmd.Flags().StringVarP(&projectName, "project", "p", "", "프로젝트 이름 (필수)")
 	initCmd.MarkFlagRequired("project")
+
+	// WireGuard flags (disabled by default)
+	initCmd.Flags().BoolVarP(&enableWireGuard, "wireguard", "w", false, "WireGuard VPN 활성화 (관리자 권한 필요)")
+	initCmd.Flags().IntVar(&wgPort, "wg-port", 51820, "WireGuard 포트")
+	initCmd.Flags().StringVar(&wgSubnet, "wg-subnet", "10.100.0.0/24", "VPN 서브넷")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
+	// WireGuard 지원 여부 확인
+	if enableWireGuard {
+		supported, suggestion := platform.CheckAndSuggestInstall()
+		if !supported {
+			fmt.Println(suggestion)
+			fmt.Println()
+			fmt.Println("WireGuard 없이 계속하려면 --wireguard 플래그 없이 실행하세요:")
+			fmt.Printf("  agent-collab init -p %s\n", projectName)
+			fmt.Println()
+			return fmt.Errorf("WireGuard가 설치되어 있지 않습니다")
+		}
+
+		// 루트 권한 확인
+		p := platform.GetPlatform()
+		if p.RequiresRoot() {
+			fmt.Println("⚠ WireGuard는 관리자 권한이 필요합니다.")
+			fmt.Println()
+			if strings.Contains(p.Name(), "windows") {
+				fmt.Println("관리자 권한으로 다시 실행하세요.")
+			} else {
+				fmt.Printf("  sudo agent-collab init -p %s --wireguard\n", projectName)
+			}
+			fmt.Println()
+			fmt.Println("WireGuard 없이 계속하려면 --wireguard 플래그 없이 실행하세요:")
+			fmt.Printf("  agent-collab init -p %s\n", projectName)
+			fmt.Println()
+			return fmt.Errorf("관리자 권한이 필요합니다")
+		}
+	}
+
 	fmt.Println("🚀 클러스터 초기화 중...")
+	if enableWireGuard {
+		fmt.Println("  (WireGuard VPN 활성화)")
+	} else {
+		fmt.Println("  (WireGuard VPN 비활성화)")
+	}
 	fmt.Println()
 
 	// 애플리케이션 생성
@@ -48,8 +96,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// 초기화 옵션 설정
+	opts := &application.InitializeOptions{
+		ProjectName:     projectName,
+		EnableWireGuard: enableWireGuard,
+		WireGuardPort:   wgPort,
+		Subnet:          wgSubnet,
+	}
+
 	// 초기화
-	result, err := app.Initialize(ctx, projectName)
+	result, err := app.InitializeWithOptions(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("초기화 실패: %w", err)
 	}
@@ -66,6 +122,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("    - %s\n", addr)
 	}
 	fmt.Println()
+
+	// WireGuard 정보 출력
+	if result.WireGuardEnabled {
+		fmt.Println("✓ WireGuard VPN 활성화 완료")
+		fmt.Printf("  VPN IP: %s\n", result.WireGuardIP)
+		fmt.Printf("  Endpoint: %s\n", result.WireGuardEndpoint)
+		fmt.Println()
+	}
 
 	fmt.Println("📋 초대 토큰 (팀원에게 공유하세요):")
 	fmt.Println()
