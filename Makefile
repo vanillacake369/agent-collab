@@ -161,6 +161,76 @@ install-tools:
 	go install golang.org/x/tools/cmd/goimports@latest
 	@echo "✓ Tools installed"
 
+# ===========================================
+# Multipass E2E Test Targets
+# ===========================================
+
+.PHONY: multipass-setup multipass-init multipass-test multipass-test-lock multipass-test-context multipass-cleanup multipass-status
+
+# Build Linux binary for Multipass VMs
+build-linux:
+	@echo "Building Linux AMD64 binary for Multipass..."
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o agent-collab-linux ./cmd/agent-collab
+	@echo "Binary: ./agent-collab-linux"
+
+# Set script permissions
+multipass-permissions:
+	chmod +x scripts/*.sh
+
+# Setup Multipass VMs
+multipass-setup: multipass-permissions build-linux
+	scripts/setup.sh
+
+# Initialize cluster
+multipass-init:
+	scripts/cluster-init.sh
+
+# Run lock propagation test
+multipass-test-lock:
+	scripts/test-lock.sh
+
+# Run context sync test
+multipass-test-context:
+	scripts/test-context.sh
+
+# Run all Multipass tests
+multipass-test: multipass-permissions build-linux
+	scripts/run-all.sh
+
+# Run Tier 1 tests only
+multipass-test-tier1: multipass-permissions build-linux
+	scripts/run-all.sh --tier1
+
+# Run tests but keep VMs
+multipass-test-keep: multipass-permissions build-linux
+	scripts/run-all.sh --skip-cleanup
+
+# Cleanup Multipass VMs
+multipass-cleanup:
+	scripts/cleanup.sh
+
+# Check VM status
+multipass-status:
+	@multipass list
+	@echo ""
+	@for vm in peer1 peer2 peer3; do \
+		echo "=== $$vm ==="; \
+		multipass exec $$vm -- /home/ubuntu/agent-collab status 2>/dev/null || echo "Not running"; \
+	done
+
+# Show test results
+multipass-results:
+	@echo "Test Results:"
+	@ls -la results/ 2>/dev/null || echo "No results yet"
+	@echo ""
+	@if ls results/summary-*.json 1> /dev/null 2>&1; then \
+		cat $$(ls -t results/summary-*.json | head -1); \
+	fi
+
+# ===========================================
+# Original Targets
+# ===========================================
+
 # Help
 help:
 	@echo "Available targets:"
@@ -197,6 +267,16 @@ help:
 	@echo "    nix-build       - Build with Nix"
 	@echo "    nix-run         - Run with Nix"
 	@echo "    nix-develop     - Enter Nix development shell"
+	@echo ""
+	@echo "  Multipass E2E:"
+	@echo "    multipass-setup      - Create VMs and setup environment"
+	@echo "    multipass-init       - Initialize cluster"
+	@echo "    multipass-test       - Run all Multipass tests"
+	@echo "    multipass-test-tier1 - Run Tier 1 tests only (lock)"
+	@echo "    multipass-test-keep  - Run tests, keep VMs"
+	@echo "    multipass-cleanup    - Delete VMs"
+	@echo "    multipass-status     - Check VM status"
+	@echo "    multipass-results    - Show test results"
 	@echo ""
 	@echo "  Other:"
 	@echo "    deps            - Install dependencies"
