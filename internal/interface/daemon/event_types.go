@@ -80,6 +80,7 @@ type AgentEventData struct {
 // ContextEventData contains data for context-related events.
 type ContextEventData struct {
 	FilePath string `json:"file_path"`
+	Content  string `json:"content,omitempty"`
 	AgentID  string `json:"agent_id,omitempty"`
 }
 

@@ -201,12 +201,26 @@ func handleDaemonListLocks(ctx context.Context, client *daemon.Client, args map[
 
 func handleDaemonShareContext(ctx context.Context, client *daemon.Client, args map[string]any) (*ToolCallResult, error) {
 	filePath, _ := args["file_path"].(string)
+	content, _ := args["content"].(string)
 
-	if err := client.WatchFile(filePath); err != nil {
+	// Extract metadata if provided
+	var metadata map[string]any
+	if m, ok := args["metadata"].(map[string]any); ok {
+		metadata = m
+	}
+
+	if content == "" {
+		return textResult("Error: content is required for sharing context"), nil
+	}
+
+	// Share context via daemon (stores in VectorDB and broadcasts to peers)
+	result, err := client.ShareContext(filePath, content, metadata)
+	if err != nil {
 		return textResult(fmt.Sprintf("Error sharing context: %v", err)), nil
 	}
 
-	return textResult(fmt.Sprintf("Now watching file for context sharing: %s", filePath)), nil
+	return textResult(fmt.Sprintf("Context shared successfully. %s (Document ID: %s)",
+		result.Message, result.DocumentID)), nil
 }
 
 func handleDaemonEmbedText(ctx context.Context, client *daemon.Client, args map[string]any) (*ToolCallResult, error) {

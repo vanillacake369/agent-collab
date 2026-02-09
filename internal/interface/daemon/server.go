@@ -193,6 +193,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/search", s.handleSearch)
 	mux.HandleFunc("/agents/list", s.handleListAgents)
 	mux.HandleFunc("/context/watch", s.handleWatchFile)
+	mux.HandleFunc("/context/share", s.handleShareContext)
 	mux.HandleFunc("/shutdown", s.handleShutdown)
 }
 
@@ -501,6 +502,76 @@ func (s *Server) handleWatchFile(w http.ResponseWriter, r *http.Request) {
 	}))
 
 	json.NewEncoder(w).Encode(GenericResponse{Success: true, Message: "Watching file"})
+}
+
+func (s *Server) handleShareContext(w http.ResponseWriter, r *http.Request) {
+	var req ShareContextRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(ShareContextResponse{Error: err.Error()})
+		return
+	}
+
+	if req.Content == "" {
+		json.NewEncoder(w).Encode(ShareContextResponse{Error: "content is required"})
+		return
+	}
+
+	vectorStore := s.app.VectorStore()
+	embedService := s.app.EmbeddingService()
+	if vectorStore == nil || embedService == nil {
+		json.NewEncoder(w).Encode(ShareContextResponse{Error: "services not initialized"})
+		return
+	}
+
+	// Generate embedding for the content
+	embedding, err := embedService.Embed(s.ctx, req.Content)
+	if err != nil {
+		json.NewEncoder(w).Encode(ShareContextResponse{Error: fmt.Sprintf("embedding failed: %v", err)})
+		return
+	}
+
+	// Create document
+	doc := &vector.Document{
+		Content:   req.Content,
+		Embedding: embedding,
+		FilePath:  req.FilePath,
+		Metadata:  req.Metadata,
+	}
+
+	// Insert into vector store
+	if err := vectorStore.Insert(doc); err != nil {
+		json.NewEncoder(w).Encode(ShareContextResponse{Error: fmt.Sprintf("insert failed: %v", err)})
+		return
+	}
+
+	// Flush to persist
+	if err := vectorStore.Flush(); err != nil {
+		json.NewEncoder(w).Encode(ShareContextResponse{Error: fmt.Sprintf("flush failed: %v", err)})
+		return
+	}
+
+	// Broadcast via P2P for other peers
+	if err := s.app.BroadcastContext(req.FilePath, req.Content, embedding, req.Metadata); err != nil {
+		fmt.Printf("Warning: failed to broadcast context: %v\n", err)
+	}
+
+	// Also watch the file if it exists (for future changes)
+	syncManager := s.app.SyncManager()
+	if syncManager != nil && req.FilePath != "" {
+		syncManager.WatchFile(req.FilePath)
+	}
+
+	// Publish context shared event
+	s.PublishEvent(NewEvent(EventContextUpdated, ContextEventData{
+		FilePath: req.FilePath,
+		Content:  req.Content,
+	}))
+
+	json.NewEncoder(w).Encode(ShareContextResponse{
+		Success:    true,
+		DocumentID: doc.ID,
+		Message:    fmt.Sprintf("Context shared and stored (embedding: %d dims)", len(embedding)),
+	})
 }
 
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {

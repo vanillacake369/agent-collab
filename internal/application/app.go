@@ -804,6 +804,11 @@ func (a *App) processLockMessages(ctx context.Context) {
 	}
 }
 
+// ContextMessageBase is used to determine the message type.
+type ContextMessageBase struct {
+	Type string `json:"type"`
+}
+
 // processContextMessages processes incoming context sync messages from P2P network.
 func (a *App) processContextMessages(ctx context.Context) {
 	topicName := "/agent-collab/" + a.config.ProjectName + "/context"
@@ -828,16 +833,177 @@ func (a *App) processContextMessages(ctx context.Context) {
 			continue
 		}
 
-		var delta ctxsync.Delta
-		if err := json.Unmarshal(msg.Data, &delta); err != nil {
-			fmt.Printf("Error unmarshaling delta: %v\n", err)
+		// Determine message type
+		var baseMsg ContextMessageBase
+		if err := json.Unmarshal(msg.Data, &baseMsg); err != nil {
+			fmt.Printf("Error unmarshaling context message type: %v\n", err)
 			continue
 		}
 
-		if err := a.syncManager.ReceiveDelta(&delta); err != nil {
-			fmt.Printf("Error handling delta: %v\n", err)
+		switch baseMsg.Type {
+		case "shared_context":
+			// Handle shared context from peers
+			var ctxMsg ContextMessage
+			if err := json.Unmarshal(msg.Data, &ctxMsg); err != nil {
+				fmt.Printf("Error unmarshaling shared context: %v\n", err)
+				continue
+			}
+			a.handleSharedContext(ctx, &ctxMsg)
+
+		default:
+			// Assume it's a Delta message (for backward compatibility)
+			var delta ctxsync.Delta
+			if err := json.Unmarshal(msg.Data, &delta); err != nil {
+				fmt.Printf("Error unmarshaling delta: %v\n", err)
+				continue
+			}
+
+			if err := a.syncManager.ReceiveDelta(&delta); err != nil {
+				fmt.Printf("Error handling delta: %v\n", err)
+			}
+
+			// Also store in VectorDB if it's a file change with content
+			a.storeDeltaInVectorDB(ctx, &delta)
 		}
 	}
+}
+
+// handleSharedContext processes shared context from a peer and stores it in VectorDB.
+func (a *App) handleSharedContext(ctx context.Context, msg *ContextMessage) {
+	if a.vectorStore == nil {
+		return
+	}
+
+	// Use provided embedding or generate new one
+	embedding := msg.Embedding
+	if len(embedding) == 0 && a.embedService != nil && msg.Content != "" {
+		var err error
+		embedding, err = a.embedService.Embed(ctx, msg.Content)
+		if err != nil {
+			fmt.Printf("Error generating embedding for shared context: %v\n", err)
+			return
+		}
+	}
+
+	// Create and store document
+	doc := &vector.Document{
+		Content:   msg.Content,
+		Embedding: embedding,
+		FilePath:  msg.FilePath,
+		Metadata:  msg.Metadata,
+	}
+	if doc.Metadata == nil {
+		doc.Metadata = make(map[string]any)
+	}
+	doc.Metadata["source_id"] = msg.SourceID
+	doc.Metadata["type"] = "shared_context"
+
+	if err := a.vectorStore.Insert(doc); err != nil {
+		fmt.Printf("Error storing shared context in VectorDB: %v\n", err)
+		return
+	}
+
+	// Async flush
+	go func() {
+		if err := a.vectorStore.Flush(); err != nil {
+			fmt.Printf("Error flushing VectorDB: %v\n", err)
+		}
+	}()
+
+	fmt.Printf("Received shared context from %s: %s\n", msg.SourceID, msg.FilePath)
+}
+
+// storeDeltaInVectorDB stores delta content in VectorDB for search.
+func (a *App) storeDeltaInVectorDB(ctx context.Context, delta *ctxsync.Delta) {
+	if a.vectorStore == nil || a.embedService == nil {
+		return
+	}
+
+	// Only process file changes
+	if delta.Type != ctxsync.DeltaFileChange || delta.Payload.FilePath == "" {
+		return
+	}
+
+	// Build content description from delta info
+	content := fmt.Sprintf("File change: %s from %s",
+		delta.Payload.FilePath, delta.SourceName)
+
+	// Add symbol info if available
+	if delta.Payload.FileDiff != nil {
+		for _, d := range delta.Payload.FileDiff.Diffs {
+			if d.Symbol != nil {
+				content += fmt.Sprintf("\n%s %s: %s",
+					d.Type, d.Symbol.Type, d.Symbol.Name)
+			}
+		}
+	}
+
+	// Generate embedding
+	embedding, err := a.embedService.Embed(ctx, content)
+	if err != nil {
+		fmt.Printf("Error generating embedding for delta: %v\n", err)
+		return
+	}
+
+	// Create and store document
+	doc := &vector.Document{
+		Content:   content,
+		Embedding: embedding,
+		FilePath:  delta.Payload.FilePath,
+		Metadata: map[string]any{
+			"source_id":   delta.SourceID,
+			"source_name": delta.SourceName,
+			"delta_id":    delta.ID,
+			"timestamp":   delta.Timestamp,
+			"type":        "delta_sync",
+		},
+	}
+
+	if err := a.vectorStore.Insert(doc); err != nil {
+		fmt.Printf("Error storing delta in VectorDB: %v\n", err)
+		return
+	}
+
+	// Async flush to avoid blocking
+	go func() {
+		if err := a.vectorStore.Flush(); err != nil {
+			fmt.Printf("Error flushing VectorDB: %v\n", err)
+		}
+	}()
+}
+
+// ContextMessage is a message for sharing context via P2P.
+type ContextMessage struct {
+	Type      string         `json:"type"`
+	FilePath  string         `json:"file_path"`
+	Content   string         `json:"content"`
+	Embedding []float32      `json:"embedding,omitempty"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	SourceID  string         `json:"source_id"`
+}
+
+// BroadcastContext broadcasts shared context to all peers.
+func (a *App) BroadcastContext(filePath, content string, embedding []float32, metadata map[string]any) error {
+	if a.node == nil {
+		return fmt.Errorf("node not initialized")
+	}
+
+	msg := ContextMessage{
+		Type:      "shared_context",
+		FilePath:  filePath,
+		Content:   content,
+		Embedding: embedding,
+		Metadata:  metadata,
+		SourceID:  a.node.ID().String(),
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	topicName := "/agent-collab/" + a.config.ProjectName + "/context"
+	return a.node.Publish(a.ctx, topicName, data)
 }
 
 // GetStatus는 상태를 반환합니다.

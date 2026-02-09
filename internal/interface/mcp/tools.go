@@ -204,20 +204,57 @@ func handleListLocks(ctx context.Context, app *application.App, args map[string]
 }
 
 func handleShareContext(ctx context.Context, app *application.App, args map[string]any) (*ToolCallResult, error) {
-	syncManager := app.SyncManager()
-	if syncManager == nil {
-		return textResult("Error: Sync manager not initialized"), nil
-	}
-
 	filePath, _ := args["file_path"].(string)
-	// content, _ := args["content"].(string)
+	content, _ := args["content"].(string)
 
-	// Watch the file to start tracking changes
-	if err := syncManager.WatchFile(filePath); err != nil {
-		return textResult(fmt.Sprintf("Error sharing context: %v", err)), nil
+	// Extract metadata if provided
+	var metadata map[string]any
+	if m, ok := args["metadata"].(map[string]any); ok {
+		metadata = m
 	}
 
-	return textResult(fmt.Sprintf("Now watching file for context sharing: %s", filePath)), nil
+	if content == "" {
+		return textResult("Error: content is required for sharing context"), nil
+	}
+
+	vectorStore := app.VectorStore()
+	embedService := app.EmbeddingService()
+	if vectorStore == nil || embedService == nil {
+		return textResult("Error: Vector store or embedding service not initialized"), nil
+	}
+
+	// Generate embedding for the content
+	embedding, err := embedService.Embed(ctx, content)
+	if err != nil {
+		return textResult(fmt.Sprintf("Error generating embedding: %v", err)), nil
+	}
+
+	// Create document
+	doc := &vector.Document{
+		Content:   content,
+		Embedding: embedding,
+		FilePath:  filePath,
+		Metadata:  metadata,
+	}
+
+	// Insert into vector store
+	if err := vectorStore.Insert(doc); err != nil {
+		return textResult(fmt.Sprintf("Error storing context: %v", err)), nil
+	}
+
+	// Flush to persist
+	if err := vectorStore.Flush(); err != nil {
+		return textResult(fmt.Sprintf("Error persisting context: %v", err)), nil
+	}
+
+	// Also watch the file for future changes if syncManager is available
+	syncManager := app.SyncManager()
+	if syncManager != nil && filePath != "" {
+		syncManager.WatchFile(filePath)
+	}
+
+	return textResult(fmt.Sprintf("Context shared successfully (Document ID: %s, embedding: %d dims)",
+		doc.ID, len(embedding))), nil
 }
 
 func handleEmbedText(ctx context.Context, app *application.App, args map[string]any) (*ToolCallResult, error) {
