@@ -36,6 +36,7 @@ func NewParser() *Parser {
 
 // ParseFile은 파일을 파싱합니다.
 func (p *Parser) ParseFile(filePath string) (*ParseResult, error) {
+	// #nosec G304 - filePath is provided by application code for code analysis, not direct user input
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)

@@ -33,9 +33,9 @@ type Delta struct {
 // DeltaPayload는 델타 페이로드입니다.
 type DeltaPayload struct {
 	// 파일 변경
-	FilePath   string        `json:"file_path,omitempty"`
-	FileDiff   *ast.FileDiff `json:"file_diff,omitempty"`
-	FileHash   string        `json:"file_hash,omitempty"`
+	FilePath string        `json:"file_path,omitempty"`
+	FileDiff *ast.FileDiff `json:"file_diff,omitempty"`
+	FileHash string        `json:"file_hash,omitempty"`
 
 	// 락 정보
 	LockID     string `json:"lock_id,omitempty"`

@@ -6,10 +6,15 @@ import (
 	"agent-collab/internal/interface/cli"
 )
 
-var version = "dev"
+var (
+	version = "dev"
+	commit  = "unknown"
+	date    = "unknown"
+	builtBy = "unknown"
+)
 
 func main() {
-	cli.SetVersion(version)
+	cli.SetVersionInfo(version, commit, date, builtBy)
 	if err := cli.Execute(); err != nil {
 		os.Exit(1)
 	}

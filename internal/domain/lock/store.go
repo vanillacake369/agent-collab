@@ -11,21 +11,25 @@ const CleanupInterval = 10 * time.Second
 
 // LockStore is a lock storage.
 type LockStore struct {
-	mu       sync.RWMutex
-	locks    map[string]*SemanticLock // lockID -> lock
-	byTarget map[string]string        // targetID -> lockID
-	ctx      context.Context
-	cancel   context.CancelFunc
+	mu         sync.RWMutex
+	locks      map[string]*SemanticLock // lockID -> lock
+	byTarget   map[string]string        // targetID -> lockID
+	history    []*HistoryEntry          // recent lock history
+	maxHistory int
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 // NewLockStore creates a new lock store.
 func NewLockStore(ctx context.Context) *LockStore {
 	ctx, cancel := context.WithCancel(ctx)
 	store := &LockStore{
-		locks:    make(map[string]*SemanticLock),
-		byTarget: make(map[string]string),
-		ctx:      ctx,
-		cancel:   cancel,
+		locks:      make(map[string]*SemanticLock),
+		byTarget:   make(map[string]string),
+		history:    make([]*HistoryEntry, 0, 100),
+		maxHistory: 100,
+		ctx:        ctx,
+		cancel:     cancel,
 	}
 
 	go store.cleanupExpired()
@@ -54,6 +58,16 @@ func (s *LockStore) Add(lock *SemanticLock) error {
 
 	s.locks[lock.ID] = lock
 	s.byTarget[targetID] = lock.ID
+
+	// Record history
+	s.addHistory(&HistoryEntry{
+		Timestamp:  time.Now(),
+		Action:     "acquired",
+		LockID:     lock.ID,
+		HolderID:   lock.HolderID,
+		HolderName: lock.HolderName,
+		Target:     lock.Target.String(),
+	})
 
 	return nil
 }
@@ -109,6 +123,16 @@ func (s *LockStore) Remove(lockID string) error {
 
 	delete(s.locks, lockID)
 	delete(s.byTarget, lock.Target.ID())
+
+	// Record history
+	s.addHistory(&HistoryEntry{
+		Timestamp:  time.Now(),
+		Action:     "released",
+		LockID:     lock.ID,
+		HolderID:   lock.HolderID,
+		HolderName: lock.HolderName,
+		Target:     lock.Target.String(),
+	})
 
 	return nil
 }
@@ -195,9 +219,52 @@ func (s *LockStore) cleanupExpired() {
 				if lock.IsExpired() {
 					delete(s.locks, id)
 					delete(s.byTarget, lock.Target.ID())
+					// Record expiration in history
+					s.history = append(s.history, &HistoryEntry{
+						Timestamp:  time.Now(),
+						Action:     "expired",
+						LockID:     lock.ID,
+						HolderID:   lock.HolderID,
+						HolderName: lock.HolderName,
+						Target:     lock.Target.String(),
+					})
 				}
 			}
 			s.mu.Unlock()
 		}
 	}
+}
+
+// addHistory adds an entry to the history (must be called with lock held).
+func (s *LockStore) addHistory(entry *HistoryEntry) {
+	s.history = append(s.history, entry)
+	if len(s.history) > s.maxHistory {
+		s.history = s.history[1:]
+	}
+}
+
+// GetHistory returns recent lock history entries.
+func (s *LockStore) GetHistory(limit int) []*HistoryEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if limit <= 0 || limit > len(s.history) {
+		limit = len(s.history)
+	}
+
+	// Return most recent entries
+	start := len(s.history) - limit
+	if start < 0 {
+		start = 0
+	}
+
+	result := make([]*HistoryEntry, limit)
+	copy(result, s.history[start:])
+
+	// Reverse to show newest first
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
+	}
+
+	return result
 }

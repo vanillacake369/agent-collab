@@ -59,9 +59,11 @@ func (vc *VectorClock) Merge(other *VectorClock) {
 
 // Compare compares two vector clocks.
 // Returns:
-//   -1: vc < other (happens before)
-//    0: vc || other (concurrent or equal)
-//    1: vc > other (happens after)
+//
+//	-1: vc < other (happens before)
+//	 0: vc || other (concurrent or equal)
+//	 1: vc > other (happens after)
+//
 // Uses ToMap() to avoid potential deadlock from nested locks.
 func (vc *VectorClock) Compare(other *VectorClock) int {
 	// Get snapshots to avoid deadlock

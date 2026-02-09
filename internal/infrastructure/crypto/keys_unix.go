@@ -19,9 +19,15 @@ func validateFileOwnership(info os.FileInfo) error {
 	}
 
 	// Check if file is owned by current user
-	currentUID := uint32(os.Getuid())
-	if stat.Uid != currentUID {
-		return fmt.Errorf("key file must be owned by current user (file uid: %d, current uid: %d)", stat.Uid, currentUID)
+	// #nosec G115 - os.Getuid() returns non-negative value on Unix systems
+	currentUID := stat.Uid
+	expectedUID := os.Getuid()
+	if expectedUID < 0 {
+		// Getuid should never return negative on Unix, but check anyway
+		return nil
+	}
+	if currentUID != uint32(expectedUID) {
+		return fmt.Errorf("key file must be owned by current user (file uid: %d, current uid: %d)", currentUID, expectedUID)
 	}
 
 	return nil

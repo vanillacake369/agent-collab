@@ -18,10 +18,10 @@ type RecoveryManager struct {
 	peers    map[string]*PeerState
 
 	// Recovery state
-	inRecovery      bool
-	recoveryStart   time.Time
-	partitionStart  time.Time
-	pendingReplays  map[string][]*Delta // peerID -> deltas to replay
+	inRecovery     bool
+	recoveryStart  time.Time
+	partitionStart time.Time
+	pendingReplays map[string][]*Delta // peerID -> deltas to replay
 
 	// Callbacks
 	onConflict  func(*RecoveryConflict) error
@@ -39,13 +39,13 @@ type RecoveryConflict struct {
 
 // RecoveryResult holds the result of context sync recovery.
 type RecoveryResult struct {
-	DeltasReplayed     int              `json:"deltas_replayed"`
-	DeltasMerged       int              `json:"deltas_merged"`
-	ConflictsFound     int              `json:"conflicts_found"`
-	ConflictsResolved  int              `json:"conflicts_resolved"`
-	ConflictsEscalated int              `json:"conflicts_escalated"`
-	PeersReconciled    int              `json:"peers_reconciled"`
-	Duration           time.Duration    `json:"duration"`
+	DeltasReplayed     int                 `json:"deltas_replayed"`
+	DeltasMerged       int                 `json:"deltas_merged"`
+	ConflictsFound     int                 `json:"conflicts_found"`
+	ConflictsResolved  int                 `json:"conflicts_resolved"`
+	ConflictsEscalated int                 `json:"conflicts_escalated"`
+	PeersReconciled    int                 `json:"peers_reconciled"`
+	Duration           time.Duration       `json:"duration"`
 	Conflicts          []*RecoveryConflict `json:"conflicts,omitempty"`
 }
 

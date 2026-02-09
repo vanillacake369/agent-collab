@@ -1,0 +1,35 @@
+name: Lint
+on:
+  pull_request:
+    branches: [main]
+    paths: ["**.go", "go.mod", "go.sum", ".golangci.yml"]
+  push:
+    branches: [main]
+    paths: ["**.go", "go.mod", "go.sum", ".golangci.yml"]
+  merge_group:
+jobs:
+  golangci-lint:
+    name: Go Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.0.2
+          args: --timeout=5m
+
+  staticcheck:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go install honnef.co/go/tools/cmd/staticcheck@latest
+      - run: staticcheck -checks="all,-ST1000,-ST1003,-ST1005,-ST1020,-ST1021,-ST1022,-SA1019,-QF1003,-U1000" ./...

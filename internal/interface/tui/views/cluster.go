@@ -6,11 +6,11 @@ type ClusterView struct {
 	height int
 
 	// 데이터
-	healthScore   float64
-	totalPeers    int
-	activeLocks   int
-	pendingSyncs  int
-	avgLatency    int
+	healthScore    float64
+	totalPeers     int
+	activeLocks    int
+	pendingSyncs   int
+	avgLatency     int
 	messagesPerSec float64
 }
 

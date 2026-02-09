@@ -35,9 +35,9 @@ type PeerState struct {
 
 // Conflict는 동시 수정 충돌입니다.
 type Conflict struct {
-	FilePath    string   `json:"file_path"`
-	LocalDelta  *Delta   `json:"local_delta"`
-	RemoteDelta *Delta   `json:"remote_delta"`
+	FilePath    string    `json:"file_path"`
+	LocalDelta  *Delta    `json:"local_delta"`
+	RemoteDelta *Delta    `json:"remote_delta"`
 	DetectedAt  time.Time `json:"detected_at"`
 }
 
@@ -346,19 +346,19 @@ func (sm *SyncManager) GetStats() *SyncStats {
 	}
 
 	return &SyncStats{
-		TotalDeltas:    sm.deltaLog.Size(),
-		TotalPeers:     len(sm.peers),
-		OnlinePeers:    onlinePeers,
-		WatchedFiles:   len(sm.watcher.GetWatchedFiles()),
-		VectorClock:    sm.vectorClock.ToMap(),
+		TotalDeltas:  sm.deltaLog.Size(),
+		TotalPeers:   len(sm.peers),
+		OnlinePeers:  onlinePeers,
+		WatchedFiles: len(sm.watcher.GetWatchedFiles()),
+		VectorClock:  sm.vectorClock.ToMap(),
 	}
 }
 
 // SyncStats는 동기화 통계입니다.
 type SyncStats struct {
-	TotalDeltas    int               `json:"total_deltas"`
-	TotalPeers     int               `json:"total_peers"`
-	OnlinePeers    int               `json:"online_peers"`
-	WatchedFiles   int               `json:"watched_files"`
-	VectorClock    map[string]uint64 `json:"vector_clock"`
+	TotalDeltas  int               `json:"total_deltas"`
+	TotalPeers   int               `json:"total_peers"`
+	OnlinePeers  int               `json:"online_peers"`
+	WatchedFiles int               `json:"watched_files"`
+	VectorClock  map[string]uint64 `json:"vector_clock"`
 }
