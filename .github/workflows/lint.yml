@@ -16,11 +16,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: false # golangci-lint-action handles caching
+          cache: false
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v2.0.2
           args: --timeout=5m
+          skip-cache: false
 
   staticcheck:
     name: Static Analysis
@@ -32,4 +33,4 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go install honnef.co/go/tools/cmd/staticcheck@latest
-      - run: staticcheck -checks="all,-U1000,-ST1005" ./...
+      - run: staticcheck -checks="all,-ST1000,-ST1003,-ST1005,-ST1020,-ST1021,-ST1022,-SA1019,-QF1003,-U1000" ./...

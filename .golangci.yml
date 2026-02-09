@@ -5,8 +5,6 @@ run:
   modules-download-mode: readonly
 
 linters:
-  # Critical linters only for initial release
-  # TODO: Enable more linters progressively
   default: none
   enable:
     - govet
@@ -16,14 +14,14 @@ linters:
     staticcheck:
       checks:
         - all
-        - -ST1000  # Package comment
-        - -ST1003  # MixedCaps
-        - -ST1005  # Error strings capitalization
-        - -ST1020  # Comment on exported method
-        - -ST1021  # Comment on exported type
-        - -ST1022  # Comment on exported const/var
-        - -SA1019  # Deprecated
-        - -QF1003  # Could use tagged switch
+        - -ST1000
+        - -ST1003
+        - -ST1005
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        - -SA1019
+        - -QF1003
 
 formatters:
   enable:
