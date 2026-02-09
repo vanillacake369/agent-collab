@@ -3,9 +3,11 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"agent-collab/internal/application"
+	"agent-collab/internal/infrastructure/network/wireguard/platform"
 
 	"github.com/spf13/cobra"
 )
@@ -47,6 +49,36 @@ func init() {
 
 func runInit(cmd *cobra.Command, args []string) error {
 	enableWireGuard := !disableWireGuard
+
+	// WireGuard 지원 여부 확인
+	if enableWireGuard {
+		supported, suggestion := platform.CheckAndSuggestInstall()
+		if !supported {
+			fmt.Println(suggestion)
+			fmt.Println()
+			fmt.Println("WireGuard 없이 계속하려면 --no-wireguard 플래그를 사용하세요:")
+			fmt.Printf("  agent-collab init -p %s --no-wireguard\n", projectName)
+			fmt.Println()
+			return fmt.Errorf("WireGuard가 설치되어 있지 않습니다")
+		}
+
+		// 루트 권한 확인
+		p := platform.GetPlatform()
+		if p.RequiresRoot() {
+			fmt.Println("⚠ WireGuard는 관리자 권한이 필요합니다.")
+			fmt.Println()
+			if strings.Contains(p.Name(), "windows") {
+				fmt.Println("관리자 권한으로 다시 실행하세요.")
+			} else {
+				fmt.Printf("  sudo agent-collab init -p %s\n", projectName)
+			}
+			fmt.Println()
+			fmt.Println("WireGuard 없이 계속하려면 --no-wireguard 플래그를 사용하세요:")
+			fmt.Printf("  agent-collab init -p %s --no-wireguard\n", projectName)
+			fmt.Println()
+			return fmt.Errorf("관리자 권한이 필요합니다")
+		}
+	}
 
 	fmt.Println("🚀 클러스터 초기화 중...")
 	if enableWireGuard {
