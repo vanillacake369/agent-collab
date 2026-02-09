@@ -1,28 +1,14 @@
 package embedding
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
 	"sync"
 	"time"
 
 	"agent-collab/internal/domain/token"
-)
-
-// Provider represents an embedding provider.
-type Provider string
-
-const (
-	ProviderOpenAI   Provider = "openai"
-	ProviderLocal    Provider = "local"
-	ProviderMock     Provider = "mock"
 )
 
 // Config holds embedding service configuration.
@@ -39,11 +25,17 @@ type Config struct {
 
 // DefaultConfig returns default configuration.
 func DefaultConfig() *Config {
+	// Auto-detect available provider
+	provider := DetectAvailableProvider()
+	defaults := DefaultProviderConfigs()
+	cfg := defaults[provider]
+
 	return &Config{
-		Provider:   ProviderOpenAI,
-		Model:      "text-embedding-3-small",
-		Dimension:  1536,
-		BaseURL:    "https://api.openai.com/v1",
+		Provider:   provider,
+		Model:      cfg.Model,
+		Dimension:  cfg.Dimension,
+		BaseURL:    cfg.BaseURL,
+		APIKey:     GetAPIKeyFromEnv(provider),
 		Timeout:    30 * time.Second,
 		BatchSize:  100,
 		MaxRetries: 3,
@@ -52,10 +44,10 @@ func DefaultConfig() *Config {
 
 // Service generates embeddings for text content.
 type Service struct {
-	mu     sync.RWMutex
-	config *Config
-	client *http.Client
-	cache  map[string][]float32 // content hash -> embedding
+	mu       sync.RWMutex
+	config   *Config
+	provider EmbeddingProvider
+	cache    map[string][]float32 // content hash -> embedding
 
 	// Token tracking
 	tokenTracker *token.Tracker
@@ -67,18 +59,62 @@ func NewService(cfg *Config) *Service {
 		cfg = DefaultConfig()
 	}
 
-	// Try to get API key from environment
+	// Get API key from environment if not set
 	if cfg.APIKey == "" {
-		cfg.APIKey = os.Getenv("OPENAI_API_KEY")
+		cfg.APIKey = GetAPIKeyFromEnv(cfg.Provider)
+	}
+
+	// Create provider
+	providerCfg := &ProviderConfig{
+		Provider:  cfg.Provider,
+		APIKey:    cfg.APIKey,
+		BaseURL:   cfg.BaseURL,
+		Model:     cfg.Model,
+		Dimension: cfg.Dimension,
+	}
+
+	provider, err := CreateProvider(providerCfg)
+	if err != nil {
+		// Fall back to mock provider
+		provider = NewMockProvider(providerCfg)
 	}
 
 	return &Service{
-		config: cfg,
-		client: &http.Client{
-			Timeout: cfg.Timeout,
-		},
-		cache: make(map[string][]float32),
+		config:   cfg,
+		provider: provider,
+		cache:    make(map[string][]float32),
 	}
+}
+
+// NewServiceWithProvider creates a new embedding service with a specific provider.
+func NewServiceWithProvider(provider EmbeddingProvider) *Service {
+	return &Service{
+		config: &Config{
+			Provider:  provider.Name(),
+			Model:     provider.Model(),
+			Dimension: provider.Dimension(),
+			BatchSize: 100,
+		},
+		provider: provider,
+		cache:    make(map[string][]float32),
+	}
+}
+
+// SetProvider changes the embedding provider.
+func (s *Service) SetProvider(provider EmbeddingProvider) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.provider = provider
+	s.config.Provider = provider.Name()
+	s.config.Model = provider.Model()
+	s.config.Dimension = provider.Dimension()
+}
+
+// GetProvider returns the current provider.
+func (s *Service) GetProvider() EmbeddingProvider {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.provider
 }
 
 // SetTokenTracker sets the token tracker for usage monitoring.
@@ -100,7 +136,12 @@ func (s *Service) Embed(ctx context.Context, text string) ([]float32, error) {
 	s.mu.RUnlock()
 
 	// Generate embedding
-	embeddings, tokensUsed, err := s.generateEmbeddings(ctx, []string{text})
+	s.mu.RLock()
+	provider := s.provider
+	model := s.config.Model
+	s.mu.RUnlock()
+
+	embeddings, tokensUsed, err := provider.Embed(ctx, []string{text})
 	if err != nil {
 		return nil, err
 	}
@@ -110,8 +151,12 @@ func (s *Service) Embed(ctx context.Context, text string) ([]float32, error) {
 	}
 
 	// Record token usage
-	if s.tokenTracker != nil && tokensUsed > 0 {
-		s.tokenTracker.RecordEmbedding(int64(tokensUsed), s.config.Model)
+	s.mu.RLock()
+	tracker := s.tokenTracker
+	s.mu.RUnlock()
+
+	if tracker != nil && tokensUsed > 0 {
+		tracker.RecordEmbedding(int64(tokensUsed), model)
 	}
 
 	// Cache result
@@ -143,6 +188,9 @@ func (s *Service) EmbedBatch(ctx context.Context, texts []string) ([][]float32, 
 			uncachedTexts = append(uncachedTexts, text)
 		}
 	}
+	provider := s.provider
+	model := s.config.Model
+	batchSize := s.config.BatchSize
 	s.mu.RUnlock()
 
 	if len(uncachedTexts) == 0 {
@@ -151,14 +199,14 @@ func (s *Service) EmbedBatch(ctx context.Context, texts []string) ([][]float32, 
 
 	// Generate embeddings for uncached texts in batches
 	var totalTokens int
-	for i := 0; i < len(uncachedTexts); i += s.config.BatchSize {
-		end := i + s.config.BatchSize
+	for i := 0; i < len(uncachedTexts); i += batchSize {
+		end := i + batchSize
 		if end > len(uncachedTexts) {
 			end = len(uncachedTexts)
 		}
 
 		batch := uncachedTexts[i:end]
-		embeddings, tokensUsed, err := s.generateEmbeddings(ctx, batch)
+		embeddings, tokensUsed, err := provider.Embed(ctx, batch)
 		if err != nil {
 			return nil, err
 		}
@@ -176,151 +224,36 @@ func (s *Service) EmbedBatch(ctx context.Context, texts []string) ([][]float32, 
 	}
 
 	// Record token usage
-	if s.tokenTracker != nil && totalTokens > 0 {
-		s.tokenTracker.RecordEmbedding(int64(totalTokens), s.config.Model)
+	s.mu.RLock()
+	tracker := s.tokenTracker
+	s.mu.RUnlock()
+
+	if tracker != nil && totalTokens > 0 {
+		tracker.RecordEmbedding(int64(totalTokens), model)
 	}
 
 	return results, nil
 }
 
-// generateEmbeddings calls the embedding API.
-func (s *Service) generateEmbeddings(ctx context.Context, texts []string) ([][]float32, int, error) {
-	switch s.config.Provider {
-	case ProviderOpenAI:
-		return s.openAIEmbed(ctx, texts)
-	case ProviderMock:
-		return s.mockEmbed(texts)
-	case ProviderLocal:
-		return s.localEmbed(ctx, texts)
-	default:
-		return nil, 0, fmt.Errorf("unknown provider: %s", s.config.Provider)
-	}
-}
-
-// OpenAI embedding request/response types
-type openAIEmbeddingRequest struct {
-	Model string   `json:"model"`
-	Input []string `json:"input"`
-}
-
-type openAIEmbeddingResponse struct {
-	Object string `json:"object"`
-	Data   []struct {
-		Object    string    `json:"object"`
-		Index     int       `json:"index"`
-		Embedding []float32 `json:"embedding"`
-	} `json:"data"`
-	Model string `json:"model"`
-	Usage struct {
-		PromptTokens int `json:"prompt_tokens"`
-		TotalTokens  int `json:"total_tokens"`
-	} `json:"usage"`
-}
-
-// openAIEmbed generates embeddings using OpenAI API.
-func (s *Service) openAIEmbed(ctx context.Context, texts []string) ([][]float32, int, error) {
-	if s.config.APIKey == "" {
-		return nil, 0, fmt.Errorf("OpenAI API key not set (set OPENAI_API_KEY environment variable)")
-	}
-
-	reqBody := openAIEmbeddingRequest{
-		Model: s.config.Model,
-		Input: texts,
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	url := s.config.BaseURL + "/embeddings"
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonData))
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+s.config.APIKey)
-
-	var resp *http.Response
-	var lastErr error
-
-	for attempt := 0; attempt <= s.config.MaxRetries; attempt++ {
-		resp, err = s.client.Do(req)
-		if err == nil && resp.StatusCode == http.StatusOK {
-			break
-		}
-		lastErr = err
-		if resp != nil {
-			resp.Body.Close()
-		}
-		if attempt < s.config.MaxRetries {
-			time.Sleep(time.Duration(attempt+1) * time.Second)
-		}
-	}
-
-	if lastErr != nil && resp == nil {
-		return nil, 0, fmt.Errorf("request failed after retries: %w", lastErr)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, 0, fmt.Errorf("API error: %d - %s", resp.StatusCode, string(body))
-	}
-
-	defer resp.Body.Close()
-
-	var embResp openAIEmbeddingResponse
-	if err := json.NewDecoder(resp.Body).Decode(&embResp); err != nil {
-		return nil, 0, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	// Extract embeddings in correct order
-	embeddings := make([][]float32, len(texts))
-	for _, item := range embResp.Data {
-		if item.Index < len(embeddings) {
-			embeddings[item.Index] = item.Embedding
-		}
-	}
-
-	return embeddings, embResp.Usage.TotalTokens, nil
-}
-
-// mockEmbed generates mock embeddings for testing.
-func (s *Service) mockEmbed(texts []string) ([][]float32, int, error) {
-	embeddings := make([][]float32, len(texts))
-	totalTokens := 0
-
-	for i, text := range texts {
-		// Generate deterministic mock embedding based on text hash
-		hash := sha256.Sum256([]byte(text))
-		embedding := make([]float32, s.config.Dimension)
-		for j := 0; j < s.config.Dimension; j++ {
-			embedding[j] = float32(hash[j%32]) / 255.0
-		}
-		embeddings[i] = embedding
-		totalTokens += len(text) / 4 // Rough token estimate
-	}
-
-	return embeddings, totalTokens, nil
-}
-
-// localEmbed generates embeddings using a local model (placeholder).
-func (s *Service) localEmbed(ctx context.Context, texts []string) ([][]float32, int, error) {
-	// Placeholder for local embedding model integration
-	// Could integrate with sentence-transformers, fastembed, etc.
-	return nil, 0, fmt.Errorf("local embedding not implemented")
-}
-
 // Dimension returns the embedding dimension.
 func (s *Service) Dimension() int {
-	return s.config.Dimension
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.provider.Dimension()
 }
 
 // Model returns the model name.
 func (s *Service) Model() string {
-	return s.config.Model
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.provider.Model()
+}
+
+// Provider returns the current provider name.
+func (s *Service) Provider() Provider {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.provider.Name()
 }
 
 // ClearCache clears the embedding cache.

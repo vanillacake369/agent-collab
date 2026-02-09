@@ -2,6 +2,10 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+
+	"agent-collab/internal/application"
 
 	"github.com/spf13/cobra"
 )
@@ -47,12 +51,41 @@ func runLeave(cmd *cobra.Command, args []string) error {
 	fmt.Println("🔌 클러스터 탈퇴 중...")
 	fmt.Println()
 
-	// TODO: 실제 탈퇴 로직
-	fmt.Println("✓ 활성 락 해제 완료")
+	app, err := application.New(nil)
+	if err != nil {
+		return fmt.Errorf("앱 생성 실패: %w", err)
+	}
+
+	// Release locks
+	lockService := app.LockService()
+	if lockService != nil {
+		myLocks := lockService.ListMyLocks()
+		for _, l := range myLocks {
+			_ = lockService.ReleaseLock(cmd.Context(), l.ID)
+		}
+		if len(myLocks) > 0 {
+			fmt.Printf("✓ 활성 락 해제 완료 (%d개)\n", len(myLocks))
+		} else {
+			fmt.Println("✓ 활성 락 없음")
+		}
+	}
+
+	// Stop the application (disconnects from peers)
+	if err := app.Stop(); err != nil {
+		fmt.Printf("⚠️  앱 종료 중 경고: %v\n", err)
+	}
 	fmt.Println("✓ Peer 연결 종료")
 
 	if leaveClean {
-		fmt.Println("✓ 로컬 데이터 삭제 완료")
+		cfg := app.Config()
+		if cfg != nil && cfg.DataDir != "" {
+			if err := os.RemoveAll(filepath.Join(cfg.DataDir, "vectors")); err == nil {
+				fmt.Println("✓ 벡터 데이터 삭제 완료")
+			}
+			if err := os.RemoveAll(filepath.Join(cfg.DataDir, "metrics")); err == nil {
+				fmt.Println("✓ 메트릭 데이터 삭제 완료")
+			}
+		}
 	}
 
 	fmt.Println()

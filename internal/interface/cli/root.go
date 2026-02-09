@@ -12,6 +12,9 @@ var (
 	cfgFile string
 	verbose bool
 	version = "dev"
+	commit  = "unknown"
+	date    = "unknown"
+	builtBy = "unknown"
 )
 
 var rootCmd = &cobra.Command{
@@ -35,6 +38,24 @@ func Execute() error {
 // SetVersion은 버전을 설정합니다.
 func SetVersion(v string) {
 	version = v
+}
+
+// SetVersionInfo sets full version information.
+func SetVersionInfo(v, c, d, b string) {
+	version = v
+	commit = c
+	date = d
+	builtBy = b
+}
+
+// GetVersion returns the current version.
+func GetVersion() string {
+	return version
+}
+
+// GetVersionInfo returns full version information.
+func GetVersionInfo() (ver, com, dat, built string) {
+	return version, commit, date, builtBy
 }
 
 func init() {

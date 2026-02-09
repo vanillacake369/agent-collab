@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"agent-collab/internal/domain/agent"
 	"agent-collab/internal/domain/ctxsync"
 	"agent-collab/internal/domain/lock"
 	"agent-collab/internal/domain/token"
@@ -41,9 +42,10 @@ type App struct {
 	wgManager *wireguard.WireGuardManager
 
 	// Domain services
-	lockService  *lock.LockService
-	syncManager  *ctxsync.SyncManager
-	tokenTracker *token.Tracker
+	lockService   *lock.LockService
+	syncManager   *ctxsync.SyncManager
+	tokenTracker  *token.Tracker
+	agentRegistry *agent.Registry
 
 	// State
 	running bool
@@ -211,6 +213,11 @@ func (a *App) InitializeWithOptions(ctx context.Context, opts *InitializeOptions
 		}
 	}
 
+// Save config for daemon to load later
+	if err := a.saveConfig(); err != nil {
+		return nil, fmt.Errorf("failed to save config: %w", err)
+	}
+
 	result := &InitResult{
 		ProjectName: opts.ProjectName,
 		NodeID:      nodeIDStr,
@@ -280,6 +287,73 @@ func (a *App) initializeWireGuard(ctx context.Context, opts *InitializeOptions) 
 		Subnet:           a.config.WireGuard.Subnet,
 		CreatorIP:        mgr.GetLocalIP(),
 	}, nil
+}
+
+// saveConfig saves the app configuration to disk.
+func (a *App) saveConfig() error {
+	configPath := filepath.Join(a.config.DataDir, "config.json")
+	data, err := json.MarshalIndent(a.config, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(configPath, data, 0600)
+}
+
+// LoadFromConfig loads an existing configuration and initializes the app.
+func (a *App) LoadFromConfig(ctx context.Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.running {
+		return fmt.Errorf("app is already running")
+	}
+
+	// Load config
+	configPath := filepath.Join(a.config.DataDir, "config.json")
+	// #nosec G304 - configPath is constructed from app's DataDir, not user input
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("config not found (run 'init' first): %w", err)
+	}
+
+	if err := json.Unmarshal(data, a.config); err != nil {
+		return fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	// Set context
+	a.ctx, a.cancel = context.WithCancel(ctx)
+
+	// Load keys
+	keyPath := filepath.Join(a.config.DataDir, "key.json")
+	keyPair, err := crypto.LoadKeyPair(keyPath)
+	if err != nil {
+		return fmt.Errorf("failed to load keys: %w", err)
+	}
+	a.keyPair = keyPair
+
+	// Create libp2p node
+	nodeConfig := libp2p.DefaultConfig()
+	nodeConfig.PrivateKey = keyPair.PrivateKey
+	nodeConfig.ProjectID = a.config.ProjectName
+
+	node, err := libp2p.NewNode(ctx, nodeConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create node: %w", err)
+	}
+	a.node = node
+
+	// Initialize domain services
+	nodeIDStr := a.node.ID().String()
+	agentID := a.config.ProjectName + "-agent"
+	a.lockService = lock.NewLockService(ctx, nodeIDStr, agentID)
+	a.syncManager = ctxsync.NewSyncManager(nodeIDStr, agentID)
+
+	// Initialize Phase 3 components
+	if err := a.initPhase3Components(nodeIDStr, agentID); err != nil {
+		return fmt.Errorf("failed to initialize components: %w", err)
+	}
+
+	return nil
 }
 
 // Join은 클러스터에 참여합니다.
@@ -778,6 +852,11 @@ func (a *App) WireGuardManager() *wireguard.WireGuardManager {
 	return a.wgManager
 }
 
+// AgentRegistry returns the agent registry.
+func (a *App) AgentRegistry() *agent.Registry {
+	return a.agentRegistry
+}
+
 // initPhase3Components initializes token tracking, vector storage, and embedding.
 func (a *App) initPhase3Components(nodeID, nodeName string) error {
 	// Initialize token tracker
@@ -812,6 +891,9 @@ func (a *App) initPhase3Components(nodeID, nodeName string) error {
 	a.vectorStore.(*vector.MemoryStore).SetEmbeddingFunction(func(text string) ([]float32, error) {
 		return a.embedService.Embed(context.Background(), text)
 	})
+
+	// Initialize agent registry
+	a.agentRegistry = agent.NewRegistry(a.ctx)
 
 	return nil
 }

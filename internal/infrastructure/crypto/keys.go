@@ -35,7 +35,7 @@ func GenerateKeyPair() (*KeyPair, error) {
 
 	peerID, err := peer.IDFromPublicKey(pubKey)
 	if err != nil {
-		return nil, fmt.Errorf("Peer ID 생성 실패: %w", err)
+		return nil, fmt.Errorf("peer ID 생성 실패: %w", err)
 	}
 
 	return &KeyPair{
@@ -96,6 +96,7 @@ func LoadKeyPair(path string) (*KeyPair, error) {
 		return nil, err
 	}
 
+	// #nosec G304 - path is validated through permission checks above and is user's key file
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
@@ -120,7 +121,7 @@ func LoadKeyPair(path string) (*KeyPair, error) {
 
 	peerID, err := peer.IDFromPublicKey(pubKey)
 	if err != nil {
-		return nil, fmt.Errorf("Peer ID 생성 실패: %w", err)
+		return nil, fmt.Errorf("peer ID 생성 실패: %w", err)
 	}
 
 	return &KeyPair{

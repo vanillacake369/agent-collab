@@ -27,14 +27,14 @@ type SymbolDiff struct {
 
 // FileDiff는 파일 차이입니다.
 type FileDiff struct {
-	FilePath   string        `json:"file_path"`
-	Language   Language      `json:"language"`
-	OldHash    string        `json:"old_hash"`
-	NewHash    string        `json:"new_hash"`
-	Diffs      []*SymbolDiff `json:"diffs"`
-	AddedCount int           `json:"added_count"`
-	RemovedCount int         `json:"removed_count"`
-	ModifiedCount int        `json:"modified_count"`
+	FilePath      string        `json:"file_path"`
+	Language      Language      `json:"language"`
+	OldHash       string        `json:"old_hash"`
+	NewHash       string        `json:"new_hash"`
+	Diffs         []*SymbolDiff `json:"diffs"`
+	AddedCount    int           `json:"added_count"`
+	RemovedCount  int           `json:"removed_count"`
+	ModifiedCount int           `json:"modified_count"`
 }
 
 // Differ는 AST 차이 비교기입니다.

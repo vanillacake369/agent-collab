@@ -34,26 +34,26 @@ func (p Priority) String() string {
 type Category string
 
 const (
-	CategoryLockConflict   Category = "lock_conflict"
-	CategorySyncConflict   Category = "sync_conflict"
-	CategoryNegotiation    Category = "negotiation"
-	CategoryPeerEvent      Category = "peer_event"
-	CategorySystemAlert    Category = "system_alert"
+	CategoryLockConflict Category = "lock_conflict"
+	CategorySyncConflict Category = "sync_conflict"
+	CategoryNegotiation  Category = "negotiation"
+	CategoryPeerEvent    Category = "peer_event"
+	CategorySystemAlert  Category = "system_alert"
 )
 
 // Notification represents a notification to be sent to the user.
 type Notification struct {
-	ID          string            `json:"id"`
-	Category    Category          `json:"category"`
-	Priority    Priority          `json:"priority"`
-	Title       string            `json:"title"`
-	Message     string            `json:"message"`
-	Details     map[string]any    `json:"details,omitempty"`
-	Actions     []Action          `json:"actions,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
-	ExpiresAt   time.Time         `json:"expires_at,omitempty"`
-	Acknowledged bool             `json:"acknowledged"`
-	Response    *Response         `json:"response,omitempty"`
+	ID           string         `json:"id"`
+	Category     Category       `json:"category"`
+	Priority     Priority       `json:"priority"`
+	Title        string         `json:"title"`
+	Message      string         `json:"message"`
+	Details      map[string]any `json:"details,omitempty"`
+	Actions      []Action       `json:"actions,omitempty"`
+	CreatedAt    time.Time      `json:"created_at"`
+	ExpiresAt    time.Time      `json:"expires_at,omitempty"`
+	Acknowledged bool           `json:"acknowledged"`
+	Response     *Response      `json:"response,omitempty"`
 }
 
 // Action represents an action the user can take.
