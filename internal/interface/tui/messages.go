@@ -88,3 +88,15 @@ type TokenBreakdown struct {
 	Percent  float64
 	Cost     float64
 }
+
+// CommandResultMsg는 명령 실행 결과 메시지입니다.
+type CommandResultMsg struct {
+	Result string
+	Err    error
+}
+
+// ActionMsg는 액션 요청 메시지입니다.
+type ActionMsg struct {
+	Action string
+	Args   []string
+}
