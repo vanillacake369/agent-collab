@@ -161,7 +161,7 @@ func (a *IPAllocator) findNextAvailable() (net.IP, error) {
 
 	// Try to find an available IP
 	for i := uint32(0); i < maxHosts; i++ {
-		idx := (a.nextIndex + i - 1) % maxHosts + 1 // 1 to maxHosts
+		idx := (a.nextIndex+i-1)%maxHosts + 1 // 1 to maxHosts
 		candidateIP := make(net.IP, 4)
 		binary.BigEndian.PutUint32(candidateIP, baseIP+idx)
 

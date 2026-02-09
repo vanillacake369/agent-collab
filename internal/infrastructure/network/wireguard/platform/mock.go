@@ -98,8 +98,16 @@ func (d *MockDevice) Name() string {
 }
 
 func (d *MockDevice) Configure(cfg *DeviceConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config cannot be nil")
+	}
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	if len(cfg.PrivateKey) != 32 {
+		return fmt.Errorf("invalid private key length: expected 32, got %d", len(cfg.PrivateKey))
+	}
 
 	d.privateKey = cfg.PrivateKey
 	d.listenPort = cfg.ListenPort

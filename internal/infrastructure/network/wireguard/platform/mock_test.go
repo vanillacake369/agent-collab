@@ -76,8 +76,8 @@ func TestMockDeviceConfigure(t *testing.T) {
 		ListenPort: 51820,
 		Peers: []PeerConfig{
 			{
-				PublicKey:                 make([]byte, 32),
-				AllowedIPs:                []net.IPNet{{IP: net.ParseIP("10.100.0.2"), Mask: net.CIDRMask(32, 32)}},
+				PublicKey:                   make([]byte, 32),
+				AllowedIPs:                  []net.IPNet{{IP: net.ParseIP("10.100.0.2"), Mask: net.CIDRMask(32, 32)}},
 				PersistentKeepaliveInterval: 25,
 			},
 		},

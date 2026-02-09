@@ -470,6 +470,22 @@ func (m *WireGuardManager) IsRunning() bool {
 	return m.running
 }
 
+// ListPeers returns a list of all configured peers.
+func (m *WireGuardManager) ListPeers() ([]*Peer, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.config == nil {
+		return nil, ErrNotInitialized
+	}
+
+	peers := make([]*Peer, len(m.config.Peers))
+	for i, p := range m.config.Peers {
+		peers[i] = p.Clone()
+	}
+	return peers, nil
+}
+
 // Close shuts down the manager.
 func (m *WireGuardManager) Close() error {
 	return m.Stop()
