@@ -140,9 +140,7 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.ActionLeave):
-		m.EnterConfirmMode("클러스터에서 탈퇴하시겠습니까?", func() error {
-			return m.executeLeave()
-		})
+		m.EnterConfirmMode("클러스터에서 탈퇴하시겠습니까?", ConfirmLeave, "")
 		return m, nil
 
 	case key.Matches(msg, m.keys.ActionStatus):
@@ -175,9 +173,7 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Delete):
 		if m.activeTab == TabLocks && len(m.locksData.Locks) > 0 {
 			lockID := m.locksData.Locks[m.locksData.SelectedIndex].ID
-			m.EnterConfirmMode("락 '"+lockID+"'을 해제하시겠습니까?", func() error {
-				return m.executeReleaseLock(lockID)
-			})
+			m.EnterConfirmMode("락 '"+lockID+"'을 해제하시겠습니까?", ConfirmReleaseLock, lockID)
 		}
 	}
 
@@ -236,15 +232,29 @@ func (m Model) updateInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateConfirmMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Yes):
-		if m.confirmAction != nil {
-			if err := m.confirmAction(); err != nil {
+		// 액션 타입에 따라 처리
+		actionType := m.confirmActionType
+		targetID := m.confirmTargetID
+
+		// 상태 초기화
+		m.confirmActionType = ConfirmNone
+		m.confirmTargetID = ""
+		m.ExitToNormalMode()
+
+		switch actionType {
+		case ConfirmLeave:
+			// 클러스터 탈퇴 시 TUI 종료
+			return m, tea.Quit
+		case ConfirmReleaseLock:
+			if err := m.executeReleaseLock(targetID); err != nil {
 				m.SetResult("", err)
 			}
 		}
-		m.ExitToNormalMode()
 		return m, nil
 
 	case key.Matches(msg, m.keys.No), key.Matches(msg, m.keys.Escape):
+		m.confirmActionType = ConfirmNone
+		m.confirmTargetID = ""
 		m.ExitToNormalMode()
 		return m, nil
 	}

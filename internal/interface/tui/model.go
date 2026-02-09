@@ -19,6 +19,15 @@ const (
 	TabPeers
 )
 
+// ConfirmAction은 확인 대화상자 액션 타입입니다.
+type ConfirmAction int
+
+const (
+	ConfirmNone ConfirmAction = iota
+	ConfirmLeave
+	ConfirmReleaseLock
+)
+
 // Model은 TUI 메인 모델입니다.
 type Model struct {
 	// 크기
@@ -43,10 +52,11 @@ type Model struct {
 	inputError    string
 
 	// 확인 대화상자
-	confirmPrompt  string
-	confirmYesText string
-	confirmNoText  string
-	confirmAction  func() error
+	confirmPrompt   string
+	confirmYesText  string
+	confirmNoText   string
+	confirmActionType ConfirmAction
+	confirmTargetID   string // 락 ID 등 대상
 
 	// 선택
 	selectedIndex int
@@ -201,13 +211,14 @@ func (m *Model) EnterInputMode(prompt string, callback func(string) error) {
 }
 
 // EnterConfirmMode는 Confirm 모드로 진입합니다.
-func (m *Model) EnterConfirmMode(prompt string, action func() error) {
+func (m *Model) EnterConfirmMode(prompt string, actionType ConfirmAction, targetID string) {
 	m.prevMode = m.mode
 	m.mode = mode.Confirm
 	m.confirmPrompt = prompt
 	m.confirmYesText = "Yes"
 	m.confirmNoText = "No"
-	m.confirmAction = action
+	m.confirmActionType = actionType
+	m.confirmTargetID = targetID
 }
 
 // ExitToNormalMode는 Normal 모드로 복귀합니다.
