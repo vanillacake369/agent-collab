@@ -10,14 +10,14 @@ import (
 
 // InviteToken은 초대 토큰입니다.
 type InviteToken struct {
-	Version        int              `json:"v"`
-	ProjectID      string           `json:"pid"`
-	ProjectName    string           `json:"pn"`
-	EncryptionKey  []byte           `json:"ek"`
-	BootstrapPeers []BootstrapPeer  `json:"bp"`
-	CreatedBy      string           `json:"cb"`
-	CreatedAt      int64            `json:"ca"`
-	ExpiresAt      int64            `json:"ea,omitempty"`
+	Version        int             `json:"v"`
+	ProjectID      string          `json:"pid"`
+	ProjectName    string          `json:"pn"`
+	EncryptionKey  []byte          `json:"ek"`
+	BootstrapPeers []BootstrapPeer `json:"bp"`
+	CreatedBy      string          `json:"cb"`
+	CreatedAt      int64           `json:"ca"`
+	ExpiresAt      int64           `json:"ea,omitempty"`
 }
 
 // BootstrapPeer는 bootstrap peer 정보입니다.

@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"agent-collab/internal/application"
+	"agent-collab/internal/domain/token"
+
 	"github.com/spf13/cobra"
 )
 
@@ -48,41 +51,68 @@ func init() {
 }
 
 func runTokenShow(cmd *cobra.Command, args []string) error {
-	// TODO: 실제 토큰 가져오기
+	app, err := application.New(nil)
+	if err != nil {
+		return fmt.Errorf("앱 생성 실패: %w", err)
+	}
+
+	if app.Node() == nil {
+		fmt.Println("❌ 클러스터가 초기화되지 않았습니다.")
+		fmt.Println("먼저 'agent-collab init' 또는 'agent-collab join'을 실행하세요.")
+		return nil
+	}
+
+	tokenStr, err := app.CreateInviteToken()
+	if err != nil {
+		return fmt.Errorf("토큰 생성 실패: %w", err)
+	}
+
 	fmt.Println("현재 초대 토큰:")
 	fmt.Println()
-	fmt.Println("  eyJ2IjoxLCJwaWQiOiJhYmMxMjMuLi4iLCJwbiI6Im15LXByb2plY3QiLC4uLn0=")
-	fmt.Println()
-	fmt.Println("생성일: 2024-01-15 10:30:00")
-	fmt.Println("만료일: 없음")
+	fmt.Printf("  %s\n", tokenStr)
 	fmt.Println()
 	fmt.Println("이 토큰을 팀원에게 공유하세요.")
+	fmt.Println("팀원은 'agent-collab join <token>' 명령으로 참여할 수 있습니다.")
 
 	return nil
 }
 
 func runTokenRefresh(cmd *cobra.Command, args []string) error {
+	app, err := application.New(nil)
+	if err != nil {
+		return fmt.Errorf("앱 생성 실패: %w", err)
+	}
+
+	if app.Node() == nil {
+		fmt.Println("❌ 클러스터가 초기화되지 않았습니다.")
+		return nil
+	}
+
 	fmt.Println("🔄 토큰 갱신 중...")
 	fmt.Println()
 
-	// TODO: 실제 토큰 갱신
+	tokenStr, err := app.CreateInviteToken()
+	if err != nil {
+		return fmt.Errorf("토큰 생성 실패: %w", err)
+	}
+
 	fmt.Println("✓ 새 토큰이 생성되었습니다.")
 	fmt.Println()
-	fmt.Println("  eyJ2IjoxLCJwaWQiOiJ4eXo3ODkuLi4iLCJwbiI6Im15LXByb2plY3QiLC4uLn0=")
+	fmt.Printf("  %s\n", tokenStr)
 	fmt.Println()
-	fmt.Println("⚠️  이전 토큰은 더 이상 사용할 수 없습니다.")
+	fmt.Println("Note: 이전 토큰도 유효합니다. (토큰은 노드 주소 기반)")
 
 	return nil
 }
 
 // TokenUsage는 토큰 사용량 정보입니다.
 type TokenUsage struct {
-	Period      string         `json:"period"`
-	TotalTokens int64          `json:"total_tokens"`
-	Limit       int64          `json:"limit"`
-	UsagePercent float64       `json:"usage_percent"`
-	Breakdown   []UsageBreakdown `json:"breakdown"`
-	EstCost     float64        `json:"estimated_cost_usd"`
+	Period       string           `json:"period"`
+	TotalTokens  int64            `json:"total_tokens"`
+	Limit        int64            `json:"limit"`
+	UsagePercent float64          `json:"usage_percent"`
+	Breakdown    []UsageBreakdown `json:"breakdown"`
+	EstCost      float64          `json:"estimated_cost_usd"`
 }
 
 // UsageBreakdown은 사용량 상세 정보입니다.
@@ -93,18 +123,75 @@ type UsageBreakdown struct {
 }
 
 func runTokenUsage(cmd *cobra.Command, args []string) error {
-	// TODO: 실제 사용량 가져오기
+	app, err := application.New(nil)
+	if err != nil {
+		return fmt.Errorf("앱 생성 실패: %w", err)
+	}
+
+	tracker := app.TokenTracker()
+	if tracker == nil {
+		fmt.Println("❌ 토큰 추적기가 초기화되지 않았습니다.")
+		return nil
+	}
+
+	metrics := tracker.GetMetrics()
+
+	// Calculate total tokens based on period
+	var totalTokens int64
+	var cost float64
+	switch usagePeriod {
+	case "week":
+		totalTokens = metrics.TokensWeek
+		cost = metrics.CostWeek
+	case "month":
+		totalTokens = metrics.TokensMonth
+		cost = metrics.CostMonth
+	default:
+		totalTokens = metrics.TokensToday
+		cost = metrics.CostToday
+	}
+
+	limit := metrics.DailyLimit
+	if limit == 0 {
+		limit = 200000 // default limit
+	}
+
+	usagePercent := float64(totalTokens) / float64(limit) * 100
+	if usagePercent > 100 {
+		usagePercent = 100
+	}
+
+	// Build breakdown from metrics
+	var breakdown []UsageBreakdown
+	categoryNames := map[token.UsageCategory]string{
+		token.CategoryEmbedding:   "Embedding Generation",
+		token.CategorySync:        "Context Synchronization",
+		token.CategoryNegotiation: "Lock Negotiation",
+		token.CategoryQuery:       "Query Processing",
+		token.CategoryOther:       "Other",
+	}
+
+	for cat, tokens := range metrics.ByCategory {
+		if tokens > 0 {
+			pct := float64(tokens) / float64(totalTokens) * 100
+			if totalTokens == 0 {
+				pct = 0
+			}
+			breakdown = append(breakdown, UsageBreakdown{
+				Category: categoryNames[cat],
+				Tokens:   tokens,
+				Percent:  pct,
+			})
+		}
+	}
+
 	usage := &TokenUsage{
 		Period:       usagePeriod,
-		TotalTokens:  104521,
-		Limit:        200000,
-		UsagePercent: 52.3,
-		EstCost:      0.10,
-		Breakdown: []UsageBreakdown{
-			{Category: "Embedding Generation", Tokens: 78234, Percent: 75},
-			{Category: "Context Synchronization", Tokens: 21123, Percent: 20},
-			{Category: "Lock Negotiation", Tokens: 5164, Percent: 5},
-		},
+		TotalTokens:  totalTokens,
+		Limit:        limit,
+		UsagePercent: usagePercent,
+		EstCost:      cost,
+		Breakdown:    breakdown,
 	}
 
 	if usageJSON {

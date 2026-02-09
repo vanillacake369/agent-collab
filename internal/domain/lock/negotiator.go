@@ -22,10 +22,10 @@ const (
 
 // Timeout constants for negotiation.
 const (
-	IntentTimeout           = 5 * time.Second
-	VoteTimeout             = 10 * time.Second
-	NegotiationTimeout      = 30 * time.Second
-	SessionCleanupInterval  = 30 * time.Second
+	IntentTimeout            = 5 * time.Second
+	VoteTimeout              = 10 * time.Second
+	NegotiationTimeout       = 30 * time.Second
+	SessionCleanupInterval   = 30 * time.Second
 	ResolvedSessionRetention = time.Hour
 )
 

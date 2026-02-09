@@ -1,0 +1,38 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  # Critical linters only for initial release
+  # TODO: Enable more linters progressively
+  default: none
+  enable:
+    - govet
+    - ineffassign
+    - staticcheck
+  settings:
+    staticcheck:
+      checks:
+        - all
+        - -ST1000  # Package comment
+        - -ST1003  # MixedCaps
+        - -ST1005  # Error strings capitalization
+        - -ST1020  # Comment on exported method
+        - -ST1021  # Comment on exported type
+        - -ST1022  # Comment on exported const/var
+        - -SA1019  # Deprecated
+        - -QF1003  # Could use tagged switch
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - agent-collab
+
+issues:
+  exclude-use-default: false

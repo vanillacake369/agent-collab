@@ -8,10 +8,10 @@ import (
 )
 
 const (
-	DefaultTTL         = 30 * time.Second
-	MaxTTL             = 5 * time.Minute
-	HeartbeatInterval  = 10 * time.Second
-	MaxRenewals        = 100
+	DefaultTTL        = 30 * time.Second
+	MaxTTL            = 5 * time.Minute
+	HeartbeatInterval = 10 * time.Second
+	MaxRenewals       = 100
 )
 
 // SemanticLock은 시맨틱 락입니다.
@@ -124,9 +124,9 @@ type LockResult struct {
 
 // LockConflict는 락 충돌 정보입니다.
 type LockConflict struct {
-	RequestedLock  *SemanticLock
+	RequestedLock   *SemanticLock
 	ConflictingLock *SemanticLock
-	OverlapType    string // "full", "partial", "contains"
+	OverlapType     string // "full", "partial", "contains"
 }
 
 // NewLockConflict는 새 락 충돌을 생성합니다.

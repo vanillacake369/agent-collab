@@ -17,11 +17,11 @@ type Manager struct {
 	pending map[string]*Notification
 
 	// Notification history
-	history     []*Notification
-	maxHistory  int
+	history    []*Notification
+	maxHistory int
 
 	// Handlers
-	notifiers []Notifier
+	notifiers  []Notifier
 	onResponse ResponseHandler
 
 	// Configuration
@@ -141,10 +141,10 @@ func (m *Manager) NotifyLockConflict(ctx context.Context, details *LockConflictD
 			details.HeldBy,
 		),
 		Details: map[string]any{
-			"file_path":          details.FilePath,
-			"requested_lock_id":  details.RequestedLockID,
+			"file_path":           details.FilePath,
+			"requested_lock_id":   details.RequestedLockID,
 			"conflicting_lock_id": details.ConflictingLockID,
-			"overlap_type":       details.OverlapType,
+			"overlap_type":        details.OverlapType,
 		},
 		Actions: []Action{
 			{ID: "wait", Label: "Wait", Description: "Wait for the other agent to finish", IsDefault: true},

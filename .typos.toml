@@ -1,0 +1,27 @@
+[default]
+extend-ignore-re = [
+  # Base64 encoded strings
+  "eyJ[A-Za-z0-9+/=]+",
+  # Hex strings (commit hashes, etc.)
+  "[0-9a-f]{32,}",
+]
+
+[default.extend-words]
+# Korean words that might be flagged
+tha = "tha"
+
+[files]
+extend-exclude = [
+  "go.sum",
+  "*.lock",
+  "vendor/",
+  "dist/",
+  "*.min.js",
+  "*.min.css",
+]
+
+[type.go]
+extend-ignore-re = [
+  # Ignore struct tags
+  "`.*`",
+]
