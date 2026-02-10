@@ -9,6 +9,8 @@ extend-ignore-re = [
 [default.extend-words]
 # Korean words that might be flagged
 tha = "tha"
+# Technical acronyms
+Pn = "Pn"  # UPnP (Universal Plug and Play)
 
 [files]
 extend-exclude = [
