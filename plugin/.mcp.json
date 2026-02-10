@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "agent-collab": {
+      "command": "agent-collab",
+      "args": ["mcp", "serve"],
+      "description": "Multi-agent collaboration server providing context sharing, lock management, and event notifications"
+    }
+  }
+}
