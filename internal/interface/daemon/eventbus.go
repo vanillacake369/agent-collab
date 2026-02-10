@@ -9,6 +9,10 @@ type EventBus struct {
 	mu          sync.RWMutex
 	subscribers map[string]chan Event
 	bufferSize  int
+
+	// Event history for late-joining clients
+	history    []Event
+	maxHistory int
 }
 
 // NewEventBus creates a new event bus.
@@ -16,6 +20,8 @@ func NewEventBus() *EventBus {
 	return &EventBus{
 		subscribers: make(map[string]chan Event),
 		bufferSize:  64, // Buffer size per subscriber
+		history:     make([]Event, 0, 100),
+		maxHistory:  100,
 	}
 }
 
@@ -48,9 +54,16 @@ func (eb *EventBus) Unsubscribe(clientID string) {
 // Publish sends an event to all subscribers.
 // Non-blocking: if a subscriber's channel is full, the event is dropped for that subscriber.
 func (eb *EventBus) Publish(event Event) {
-	eb.mu.RLock()
-	defer eb.mu.RUnlock()
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
 
+	// Store in history
+	eb.history = append(eb.history, event)
+	if len(eb.history) > eb.maxHistory {
+		eb.history = eb.history[1:]
+	}
+
+	// Notify subscribers
 	for _, ch := range eb.subscribers {
 		select {
 		case ch <- event:
@@ -59,6 +72,46 @@ func (eb *EventBus) Publish(event Event) {
 			// This prevents slow subscribers from blocking others
 		}
 	}
+}
+
+// GetRecentEvents returns recent events from history.
+func (eb *EventBus) GetRecentEvents(limit int) []Event {
+	eb.mu.RLock()
+	defer eb.mu.RUnlock()
+
+	if limit <= 0 || limit > len(eb.history) {
+		limit = len(eb.history)
+	}
+
+	// Return most recent events
+	start := len(eb.history) - limit
+	if start < 0 {
+		start = 0
+	}
+
+	result := make([]Event, len(eb.history)-start)
+	copy(result, eb.history[start:])
+	return result
+}
+
+// GetEventsByType returns events of a specific type.
+func (eb *EventBus) GetEventsByType(eventType EventType, limit int) []Event {
+	eb.mu.RLock()
+	defer eb.mu.RUnlock()
+
+	result := make([]Event, 0)
+	for i := len(eb.history) - 1; i >= 0 && len(result) < limit; i-- {
+		if eb.history[i].Type == eventType {
+			result = append(result, eb.history[i])
+		}
+	}
+
+	// Reverse to get chronological order
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
+	}
+
+	return result
 }
 
 // SubscriberCount returns the number of active subscribers.
