@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -188,10 +189,14 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/lock/acquire", s.handleAcquireLock)
 	mux.HandleFunc("/lock/release", s.handleReleaseLock)
 	mux.HandleFunc("/lock/list", s.handleListLocks)
+	mux.HandleFunc("/peers/list", s.handleListPeers)
 	mux.HandleFunc("/embed", s.handleEmbed)
 	mux.HandleFunc("/search", s.handleSearch)
 	mux.HandleFunc("/agents/list", s.handleListAgents)
 	mux.HandleFunc("/context/watch", s.handleWatchFile)
+	mux.HandleFunc("/context/share", s.handleShareContext)
+	mux.HandleFunc("/events/list", s.handleListEvents)
+	mux.HandleFunc("/metrics", s.handleMetrics)
 	mux.HandleFunc("/shutdown", s.handleShutdown)
 }
 
@@ -357,6 +362,36 @@ func (s *Server) handleListLocks(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(ListLocksResponse{Locks: locks})
 }
 
+func (s *Server) handleListPeers(w http.ResponseWriter, r *http.Request) {
+	node := s.app.Node()
+	if node == nil {
+		json.NewEncoder(w).Encode(ListPeersResponse{Peers: []PeerInfo{}})
+		return
+	}
+
+	connectedPeers := node.ConnectedPeers()
+	peers := make([]PeerInfo, 0, len(connectedPeers))
+
+	for _, peerID := range connectedPeers {
+		info := node.PeerInfo(peerID)
+		addrs := make([]string, len(info.Addrs))
+		for i, addr := range info.Addrs {
+			addrs[i] = addr.String()
+		}
+
+		latency := node.Latency(peerID)
+
+		peers = append(peers, PeerInfo{
+			ID:        peerID.String(),
+			Addresses: addrs,
+			Latency:   latency.Milliseconds(),
+			Connected: true,
+		})
+	}
+
+	json.NewEncoder(w).Encode(ListPeersResponse{Peers: peers})
+}
+
 func (s *Server) handleEmbed(w http.ResponseWriter, r *http.Request) {
 	var req EmbedRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -470,6 +505,112 @@ func (s *Server) handleWatchFile(w http.ResponseWriter, r *http.Request) {
 	}))
 
 	json.NewEncoder(w).Encode(GenericResponse{Success: true, Message: "Watching file"})
+}
+
+func (s *Server) handleShareContext(w http.ResponseWriter, r *http.Request) {
+	var req ShareContextRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(ShareContextResponse{Error: err.Error()})
+		return
+	}
+
+	if req.Content == "" {
+		json.NewEncoder(w).Encode(ShareContextResponse{Error: "content is required"})
+		return
+	}
+
+	vectorStore := s.app.VectorStore()
+	embedService := s.app.EmbeddingService()
+	if vectorStore == nil || embedService == nil {
+		json.NewEncoder(w).Encode(ShareContextResponse{Error: "services not initialized"})
+		return
+	}
+
+	// Generate embedding for the content
+	embedding, err := embedService.Embed(s.ctx, req.Content)
+	if err != nil {
+		json.NewEncoder(w).Encode(ShareContextResponse{Error: fmt.Sprintf("embedding failed: %v", err)})
+		return
+	}
+
+	// Create document
+	doc := &vector.Document{
+		Content:   req.Content,
+		Embedding: embedding,
+		FilePath:  req.FilePath,
+		Metadata:  req.Metadata,
+	}
+
+	// Insert into vector store
+	if err := vectorStore.Insert(doc); err != nil {
+		json.NewEncoder(w).Encode(ShareContextResponse{Error: fmt.Sprintf("insert failed: %v", err)})
+		return
+	}
+
+	// Flush to persist
+	if err := vectorStore.Flush(); err != nil {
+		json.NewEncoder(w).Encode(ShareContextResponse{Error: fmt.Sprintf("flush failed: %v", err)})
+		return
+	}
+
+	// Broadcast via P2P for other peers
+	if err := s.app.BroadcastContext(req.FilePath, req.Content, embedding, req.Metadata); err != nil {
+		fmt.Printf("Warning: failed to broadcast context: %v\n", err)
+	}
+
+	// Also watch the file if it exists (for future changes)
+	syncManager := s.app.SyncManager()
+	if syncManager != nil && req.FilePath != "" {
+		syncManager.WatchFile(req.FilePath)
+	}
+
+	// Publish context shared event
+	s.PublishEvent(NewEvent(EventContextUpdated, ContextEventData{
+		FilePath: req.FilePath,
+		Content:  req.Content,
+	}))
+
+	json.NewEncoder(w).Encode(ShareContextResponse{
+		Success:    true,
+		DocumentID: doc.ID,
+		Message:    fmt.Sprintf("Context shared and stored (embedding: %d dims)", len(embedding)),
+	})
+}
+
+func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
+	limit := 20
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	eventType := r.URL.Query().Get("type")
+
+	var events []Event
+	if eventType != "" {
+		events = s.eventBus.GetEventsByType(EventType(eventType), limit)
+	} else {
+		events = s.eventBus.GetRecentEvents(limit)
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"events": events,
+		"count":  len(events),
+	})
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	node := s.app.Node()
+	if node == nil {
+		json.NewEncoder(w).Encode(map[string]any{
+			"error": "node not initialized",
+		})
+		return
+	}
+
+	snapshot := node.GetMetricsSnapshot()
+	json.NewEncoder(w).Encode(snapshot)
 }
 
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
