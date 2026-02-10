@@ -38,7 +38,11 @@ theme:
 markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.details
@@ -50,11 +54,19 @@ markdown_extensions:
 plugins:
   - search
 
+extra_javascript:
+  - https://unpkg.com/mermaid@10/dist/mermaid.min.js
+
 nav:
   - Home: index.md
   - Getting Started:
       - Installation: getting-started/installation.md
       - Quick Start: getting-started/quick-start.md
+      - First Collaboration: getting-started/first-collaboration.md
+  - Concepts:
+      - Architecture: concepts/architecture.md
+      - How Locks Work: concepts/locks.md
+      - Context Sharing: concepts/context.md
   - Guide:
       - Configuration: guide/configuration.md
       - CLI Commands: guide/commands.md
@@ -62,6 +74,9 @@ nav:
       - Collaboration Workflow: guide/collaboration.md
   - Integrations:
       - Claude Code: integrations/claude-code.md
+  - Operations:
+      - Troubleshooting: operations/troubleshooting.md
+      - Security: operations/security.md
   - Reference:
       - CLI Reference: reference/cli-reference.md
   - FAQ: faq.md
