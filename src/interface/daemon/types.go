@@ -152,3 +152,38 @@ type ShareContextResponse struct {
 	Message    string `json:"message,omitempty"`
 	Error      string `json:"error,omitempty"`
 }
+
+// CheckCohesionRequest is a request to check cohesion with existing context.
+type CheckCohesionRequest struct {
+	Type         string   `json:"type"`          // "before" or "after"
+	Intention    string   `json:"intention"`     // For "before" check
+	Result       string   `json:"result"`        // For "after" check
+	FilesChanged []string `json:"files_changed"` // Files modified (for "after")
+}
+
+// CohesionRelatedContext represents a related context found during cohesion check.
+type CohesionRelatedContext struct {
+	ID         string  `json:"id"`
+	Agent      string  `json:"agent"`
+	FilePath   string  `json:"file_path"`
+	Content    string  `json:"content"`
+	Similarity float32 `json:"similarity"`
+}
+
+// CohesionConflict represents a potential conflict found during cohesion check.
+type CohesionConflict struct {
+	Context  CohesionRelatedContext `json:"context"`
+	Reason   string                 `json:"reason"`
+	Severity string                 `json:"severity"`
+}
+
+// CheckCohesionResponse is the response from a cohesion check.
+type CheckCohesionResponse struct {
+	Verdict            string                   `json:"verdict"` // "cohesive", "conflict", "uncertain"
+	Confidence         float32                  `json:"confidence"`
+	RelatedContexts    []CohesionRelatedContext `json:"related_contexts"`
+	PotentialConflicts []CohesionConflict       `json:"potential_conflicts"`
+	Suggestions        []string                 `json:"suggestions"`
+	Message            string                   `json:"message"`
+	Error              string                   `json:"error,omitempty"`
+}

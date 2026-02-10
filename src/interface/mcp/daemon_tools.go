@@ -187,6 +187,37 @@ func RegisterDaemonTools(server *Server, client *daemon.Client) {
 	}, func(ctx context.Context, args map[string]any) (*ToolCallResult, error) {
 		return handleDaemonGetWarnings(ctx, client, args)
 	})
+
+	// Cohesion checking tool
+	server.RegisterTool(Tool{
+		Name:        "check_cohesion",
+		Description: "Check if your intended work or completed result aligns with existing team context. Use type='before' with 'intention' parameter when starting work, or type='after' with 'result' parameter when done. Returns verdict (cohesive/conflict/uncertain), related contexts, and suggestions.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"type": {
+					Type:        "string",
+					Description: "Check type: 'before' (when starting work) or 'after' (when completed)",
+					Enum:        []string{"before", "after"},
+				},
+				"intention": {
+					Type:        "string",
+					Description: "For 'before' check: describe what you plan to do (e.g., 'Implement session-based authentication')",
+				},
+				"result": {
+					Type:        "string",
+					Description: "For 'after' check: describe what you completed (e.g., 'Replaced JWT with session cookies')",
+				},
+				"files_changed": {
+					Type:        "array",
+					Description: "For 'after' check: list of files that were modified",
+				},
+			},
+			Required: []string{"type"},
+		},
+	}, func(ctx context.Context, args map[string]any) (*ToolCallResult, error) {
+		return handleDaemonCheckCohesion(ctx, client, args)
+	})
 }
 
 func handleDaemonAcquireLock(ctx context.Context, client *daemon.Client, args map[string]any) (*ToolCallResult, error) {
@@ -440,5 +471,63 @@ func handleDaemonGetWarnings(ctx context.Context, client *daemon.Client, args ma
 	for _, w := range warnings {
 		output += "- " + w + "\n"
 	}
+	return textResult(output), nil
+}
+
+func handleDaemonCheckCohesion(ctx context.Context, client *daemon.Client, args map[string]any) (*ToolCallResult, error) {
+	checkType, _ := args["type"].(string)
+	intention, _ := args["intention"].(string)
+	result, _ := args["result"].(string)
+
+	var filesChanged []string
+	if fc, ok := args["files_changed"].([]any); ok {
+		for _, f := range fc {
+			if s, ok := f.(string); ok {
+				filesChanged = append(filesChanged, s)
+			}
+		}
+	}
+
+	resp, err := client.CheckCohesion(checkType, intention, result, filesChanged)
+	if err != nil {
+		return textResult(fmt.Sprintf("Error checking cohesion: %v", err)), nil
+	}
+
+	// Format the response for readability
+	output := fmt.Sprintf("Cohesion Check Result: %s (confidence: %.0f%%)\n\n", resp.Verdict, resp.Confidence*100)
+	output += fmt.Sprintf("Message: %s\n", resp.Message)
+
+	if len(resp.RelatedContexts) > 0 {
+		output += "\nRelated Contexts:\n"
+		for _, ctx := range resp.RelatedContexts {
+			output += fmt.Sprintf("- [%.0f%% match] %s", ctx.Similarity*100, ctx.FilePath)
+			if ctx.Agent != "" {
+				output += fmt.Sprintf(" (by %s)", ctx.Agent)
+			}
+			output += "\n"
+			// Truncate content for readability
+			content := ctx.Content
+			if len(content) > 100 {
+				content = content[:100] + "..."
+			}
+			output += fmt.Sprintf("  %s\n", content)
+		}
+	}
+
+	if len(resp.PotentialConflicts) > 0 {
+		output += "\n⚠️ Potential Conflicts:\n"
+		for _, conflict := range resp.PotentialConflicts {
+			output += fmt.Sprintf("- [%s] %s\n", conflict.Severity, conflict.Reason)
+			output += fmt.Sprintf("  File: %s\n", conflict.Context.FilePath)
+		}
+	}
+
+	if len(resp.Suggestions) > 0 {
+		output += "\nSuggestions:\n"
+		for _, suggestion := range resp.Suggestions {
+			output += fmt.Sprintf("- %s\n", suggestion)
+		}
+	}
+
 	return textResult(output), nil
 }

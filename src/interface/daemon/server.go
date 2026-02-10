@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -195,6 +196,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/agents/list", s.handleListAgents)
 	mux.HandleFunc("/context/watch", s.handleWatchFile)
 	mux.HandleFunc("/context/share", s.handleShareContext)
+	mux.HandleFunc("/cohesion/check", s.handleCheckCohesion)
 	mux.HandleFunc("/events/list", s.handleListEvents)
 	mux.HandleFunc("/metrics", s.handleMetrics)
 	mux.HandleFunc("/shutdown", s.handleShutdown)
@@ -619,4 +621,176 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 		s.Stop()
 	}()
+}
+
+func (s *Server) handleCheckCohesion(w http.ResponseWriter, r *http.Request) {
+	var req CheckCohesionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(CheckCohesionResponse{Error: err.Error()})
+		return
+	}
+
+	vectorStore := s.app.VectorStore()
+	embedService := s.app.EmbeddingService()
+	if vectorStore == nil || embedService == nil {
+		json.NewEncoder(w).Encode(CheckCohesionResponse{Error: "services not initialized"})
+		return
+	}
+
+	// Determine query text based on check type
+	var queryText string
+	if req.Type == "before" {
+		queryText = req.Intention
+	} else {
+		queryText = req.Result
+	}
+
+	if queryText == "" {
+		json.NewEncoder(w).Encode(CheckCohesionResponse{Error: "intention or result is required"})
+		return
+	}
+
+	// Generate embedding for query
+	embedding, err := embedService.Embed(s.ctx, queryText)
+	if err != nil {
+		json.NewEncoder(w).Encode(CheckCohesionResponse{Error: fmt.Sprintf("embedding failed: %v", err)})
+		return
+	}
+
+	// Search for similar contexts
+	results, err := vectorStore.Search(embedding, &vector.SearchOptions{
+		Collection: "default",
+		TopK:       10,
+	})
+	if err != nil {
+		json.NewEncoder(w).Encode(CheckCohesionResponse{Error: fmt.Sprintf("search failed: %v", err)})
+		return
+	}
+
+	// Analyze results for cohesion
+	response := analyzeCohesion(queryText, results)
+	json.NewEncoder(w).Encode(response)
+}
+
+// analyzeCohesion analyzes search results to determine cohesion status.
+func analyzeCohesion(query string, results []*vector.SearchResult) CheckCohesionResponse {
+	response := CheckCohesionResponse{
+		Verdict:            "cohesive",
+		Confidence:         0.5,
+		RelatedContexts:    []CohesionRelatedContext{},
+		PotentialConflicts: []CohesionConflict{},
+		Suggestions:        []string{},
+		Message:            "No related context found",
+	}
+
+	if len(results) == 0 {
+		response.Verdict = "uncertain"
+		response.Message = "No related context found - this may be new work"
+		response.Suggestions = append(response.Suggestions, "Consider sharing context after completing work")
+		return response
+	}
+
+	// Conflict indicators
+	conflictIndicators := []string{
+		"instead", "replace", "remove", "switch to", "migrate",
+		"deprecated", "no longer", "대신", "변경", "제거", "전환",
+	}
+
+	// Opposing patterns
+	opposingPatterns := map[string]string{
+		"jwt":          "session",
+		"session":      "jwt",
+		"rest":         "graphql",
+		"graphql":      "rest",
+		"sql":          "nosql",
+		"nosql":        "sql",
+		"monolith":     "microservice",
+		"microservice": "monolith",
+		"sync":         "async",
+		"async":        "sync",
+	}
+
+	queryLower := strings.ToLower(query)
+	hasConflictIndicator := false
+	for _, indicator := range conflictIndicators {
+		if strings.Contains(queryLower, indicator) {
+			hasConflictIndicator = true
+			break
+		}
+	}
+
+	// Check each result
+	for _, r := range results {
+		if r.Score < 0.55 { // Low relevance threshold
+			continue
+		}
+
+		relatedCtx := CohesionRelatedContext{
+			ID:         r.Document.ID,
+			FilePath:   r.Document.FilePath,
+			Content:    r.Document.Content,
+			Similarity: r.Score,
+		}
+
+		// Extract agent from metadata if available
+		if r.Document.Metadata != nil {
+			if agent, ok := r.Document.Metadata["agent"].(string); ok {
+				relatedCtx.Agent = agent
+			}
+		}
+
+		response.RelatedContexts = append(response.RelatedContexts, relatedCtx)
+
+		// Check for conflicts
+		contentLower := strings.ToLower(r.Document.Content)
+		conflictDetected := false
+		conflictReason := ""
+
+		// Check for opposing patterns
+		for pattern, opposite := range opposingPatterns {
+			if strings.Contains(queryLower, opposite) && strings.Contains(contentLower, pattern) {
+				conflictDetected = true
+				conflictReason = fmt.Sprintf("Conflicting approach: query mentions '%s' but existing context uses '%s'", opposite, pattern)
+				break
+			}
+		}
+
+		// High similarity with conflict indicators suggests conflict
+		if !conflictDetected && r.Score > 0.85 && hasConflictIndicator {
+			conflictDetected = true
+			conflictReason = "High similarity with change indicators suggests potential conflict"
+		}
+
+		if conflictDetected {
+			severity := "medium"
+			if r.Score > 0.85 {
+				severity = "high"
+			}
+
+			response.PotentialConflicts = append(response.PotentialConflicts, CohesionConflict{
+				Context:  relatedCtx,
+				Reason:   conflictReason,
+				Severity: severity,
+			})
+		}
+	}
+
+	// Determine final verdict
+	if len(response.PotentialConflicts) > 0 {
+		response.Verdict = "conflict"
+		response.Confidence = 0.85
+		response.Message = fmt.Sprintf("Potential conflict detected with %d existing context(s)", len(response.PotentialConflicts))
+		response.Suggestions = append(response.Suggestions,
+			"Review the related contexts before proceeding",
+			"Consider discussing with the team if this changes existing decisions",
+			"Share context after completing work to inform other agents",
+		)
+	} else if len(response.RelatedContexts) > 0 {
+		response.Verdict = "cohesive"
+		response.Confidence = 0.75
+		response.Message = "Your work aligns with existing context"
+		response.Suggestions = append(response.Suggestions, "Review related contexts for additional information")
+	}
+
+	return response
 }
