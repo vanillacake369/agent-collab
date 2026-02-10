@@ -1,0 +1,67 @@
+site_name: agent-collab
+site_url: https://vanillacake369.github.io/agent-collab
+site_description: P2P distributed collaboration for AI agents
+site_author: vanillacake369
+
+repo_name: vanillacake369/agent-collab
+repo_url: https://github.com/vanillacake369/agent-collab
+
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quick-start.md
+  - Guide:
+      - Configuration: guide/configuration.md
+      - CLI Commands: guide/commands.md
+      - MCP Tools: guide/mcp-tools.md
+      - Collaboration Workflow: guide/collaboration.md
+  - Integrations:
+      - Claude Code: integrations/claude-code.md
+  - Reference:
+      - CLI Reference: reference/cli-reference.md
+  - FAQ: faq.md
