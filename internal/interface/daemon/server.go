@@ -196,6 +196,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/context/watch", s.handleWatchFile)
 	mux.HandleFunc("/context/share", s.handleShareContext)
 	mux.HandleFunc("/events/list", s.handleListEvents)
+	mux.HandleFunc("/metrics", s.handleMetrics)
 	mux.HandleFunc("/shutdown", s.handleShutdown)
 }
 
@@ -597,6 +598,19 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		"events": events,
 		"count":  len(events),
 	})
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	node := s.app.Node()
+	if node == nil {
+		json.NewEncoder(w).Encode(map[string]any{
+			"error": "node not initialized",
+		})
+		return
+	}
+
+	snapshot := node.GetMetricsSnapshot()
+	json.NewEncoder(w).Encode(snapshot)
 }
 
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
