@@ -87,7 +87,7 @@ agent-collab init -p secure-project --wireguard --wg-port 51821
 
 # Output:
 # ✓ Cluster created: my-project
-# ✓ Invite token: eyJjbHVzdGVyIjoibXktcHJvamVjdCIs...
+# ✓ Invite token: <your-invite-token>
 ```
 
 ---
@@ -110,7 +110,7 @@ agent-collab join <invite-token> [flags]
 **Example:**
 
 ```bash
-agent-collab join eyJjbHVzdGVyIjoibXktcHJvamVjdCIs... --name dev-machine-1
+agent-collab join <your-invite-token> --name dev-machine-1
 ```
 
 ---

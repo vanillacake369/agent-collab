@@ -43,7 +43,7 @@ agent-collab init -p my-first-collab
 
 # Output:
 # ✓ Cluster created: my-first-collab
-# ✓ Invite token: eyJjbHVzdGVyIjoibXktZmlyc3Q...
+# ✓ Invite token: <your-invite-token>
 ```
 
 ## Step 2: Connect First Agent
@@ -71,7 +71,7 @@ The cluster is active with 1 peer connected.
 
 ```bash
 # Join the cluster using the invite token
-agent-collab join eyJjbHVzdGVyIjoibXktZmlyc3Q...
+agent-collab join <your-invite-token>
 
 # Connect to MCP
 claude mcp add agent-collab -- agent-collab mcp serve
