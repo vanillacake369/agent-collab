@@ -3,11 +3,14 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
 	"agent-collab/internal/application"
 	"agent-collab/internal/infrastructure/network/wireguard/platform"
+	"agent-collab/internal/interface/daemon"
 
 	"github.com/spf13/cobra"
 )
@@ -23,6 +26,7 @@ var initCmd = &cobra.Command{
   - 로컬 Vector DB 초기화
   - 현재 코드베이스의 첫 인덱싱
   - 팀원 초대용 토큰 생성
+  - 백그라운드 데몬 시작
 
 WireGuard VPN을 사용하려면 --wireguard 플래그를 사용하세요 (관리자 권한 필요).`,
 	RunE: runInit,
@@ -33,6 +37,7 @@ var (
 	enableWireGuard bool
 	wgPort          int
 	wgSubnet        string
+	initForeground  bool
 )
 
 func init() {
@@ -45,6 +50,9 @@ func init() {
 	initCmd.Flags().BoolVarP(&enableWireGuard, "wireguard", "w", false, "WireGuard VPN 활성화 (관리자 권한 필요)")
 	initCmd.Flags().IntVar(&wgPort, "wg-port", 51820, "WireGuard 포트")
 	initCmd.Flags().StringVar(&wgSubnet, "wg-subnet", "10.100.0.0/24", "VPN 서브넷")
+
+	// Foreground flag
+	initCmd.Flags().BoolVarP(&initForeground, "foreground", "f", false, "포그라운드에서 실행 (데몬 없이)")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -110,17 +118,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("초기화 실패: %w", err)
 	}
 
+	// 앱 정지 (데몬이 다시 로드할 것임)
+	app.Stop()
+
 	// 결과 출력
 	fmt.Println("✓ 프로젝트 키 생성 완료")
 	fmt.Printf("  키 경로: %s\n", result.KeyPath)
 	fmt.Println()
 
-	fmt.Println("✓ P2P 노드 시작 완료")
+	fmt.Println("✓ P2P 노드 설정 완료")
 	fmt.Printf("  노드 ID: %s\n", result.NodeID)
-	fmt.Println("  주소:")
-	for _, addr := range result.Addresses {
-		fmt.Printf("    - %s\n", addr)
-	}
 	fmt.Println()
 
 	// WireGuard 정보 출력
@@ -137,6 +144,59 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	fmt.Println("팀원은 다음 명령어로 클러스터에 참여할 수 있습니다:")
 	fmt.Printf("  agent-collab join %s\n", result.InviteToken)
+	fmt.Println()
 
-	return nil
+	// 포그라운드 모드면 데몬 시작하지 않고 직접 실행
+	if initForeground {
+		return runDaemonRun(cmd, args)
+	}
+
+	// 백그라운드 데몬 시작
+	return startDaemonAfterInit()
+}
+
+// startDaemonAfterInit starts the daemon in background after initialization.
+func startDaemonAfterInit() error {
+	client := daemon.NewClient()
+
+	// Check if already running
+	if client.IsRunning() {
+		fmt.Println("✓ 데몬이 이미 실행 중입니다.")
+		return nil
+	}
+
+	// Start daemon in background
+	executable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("실행 파일 경로를 찾을 수 없습니다: %w", err)
+	}
+
+	// #nosec G204 - executable is from os.Executable(), not user input
+	daemonProcess := exec.Command(executable, "daemon", "run")
+	daemonProcess.Stdout = nil
+	daemonProcess.Stderr = nil
+	daemonProcess.Stdin = nil
+
+	// Detach from parent process (platform-specific)
+	setSysProcAttr(daemonProcess)
+
+	if err := daemonProcess.Start(); err != nil {
+		return fmt.Errorf("데몬 시작 실패: %w", err)
+	}
+
+	fmt.Printf("🚀 백그라운드 데몬 시작 중... (PID: %d)\n", daemonProcess.Process.Pid)
+
+	// Wait for daemon to be ready
+	for i := 0; i < 30; i++ {
+		time.Sleep(100 * time.Millisecond)
+		if client.IsRunning() {
+			fmt.Println("✓ 데몬이 시작되었습니다.")
+			fmt.Println()
+			fmt.Println("상태 확인: agent-collab daemon status")
+			fmt.Println("데몬 중지: agent-collab daemon stop")
+			return nil
+		}
+	}
+
+	return fmt.Errorf("데몬 시작 시간 초과")
 }

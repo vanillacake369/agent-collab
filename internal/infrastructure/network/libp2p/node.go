@@ -430,7 +430,7 @@ func (n *Node) PeerInfo(id peer.ID) peer.AddrInfo {
 	return n.host.Peerstore().PeerInfo(id)
 }
 
-// Latency는 peer의 지연 시간을 반환합니다.
+// Latency returns the latency to a peer.
 func (n *Node) Latency(id peer.ID) time.Duration {
 	return n.host.Peerstore().LatencyEWMA(id)
 }

@@ -120,7 +120,22 @@ release:
     brew install {{ .Env.GITHUB_REPOSITORY_OWNER }}/tap/agent-collab
     ```
 
-    ### APT (Debian/Ubuntu)
+    ### APT Repository (Debian/Ubuntu) - Recommended
+    ```bash
+    # Add GPG key
+    curl -fsSL https://{{ .Env.GITHUB_REPOSITORY_OWNER }}.github.io/agent-collab/gpg.key | \
+      sudo gpg --dearmor -o /usr/share/keyrings/agent-collab.gpg
+
+    # Add repository
+    echo "deb [signed-by=/usr/share/keyrings/agent-collab.gpg] \
+      https://{{ .Env.GITHUB_REPOSITORY_OWNER }}.github.io/agent-collab stable main" | \
+      sudo tee /etc/apt/sources.list.d/agent-collab.list
+
+    # Install
+    sudo apt update && sudo apt install agent-collab
+    ```
+
+    ### APT Direct Download (Debian/Ubuntu)
     ```bash
     curl -fsSL https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab/releases/download/{{ .Tag }}/agent-collab_{{ .Version }}_linux_amd64.deb -o agent-collab.deb
     sudo dpkg -i agent-collab.deb
@@ -171,6 +186,8 @@ release:
 nfpms:
   - id: packages
     package_name: agent-collab
+    file_name_template: >-
+      {{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     vendor: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
     homepage: "https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab"
     maintainer: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
@@ -181,6 +198,25 @@ nfpms:
       - rpm
       - apk
     bindir: /usr/bin
+
+    # Required dependencies
+    dependencies:
+      - ca-certificates
+
+    # Recommended (installed by default with apt, can be skipped with --no-install-recommends)
+    recommends:
+      - wireguard-tools
+
+    # Deb-specific settings
+    deb:
+      lintian_overrides:
+        - statically-linked-binary
+        - changelog-file-missing-in-native-package
+
+    # RPM-specific settings
+    rpm:
+      group: Applications/System
+
     contents:
       - src: ./LICENSE
         dst: /usr/share/licenses/agent-collab/LICENSE
