@@ -25,8 +25,22 @@ type Node struct {
 	topics    map[string]*pubsub.Topic
 	subs      map[string]*pubsub.Subscription
 	projectID string
-	batcher   *MessageBatcher
-	metrics   *NetworkMetrics
+
+	// Phase 1: Compression, Batching, Metrics
+	batcher *MessageBatcher
+	metrics *NetworkMetrics
+
+	// Phase 2: Quality, Topology, Locality, ACL
+	qualityMonitor *PeerQualityMonitor
+	topologyMgr    *TopologyManager
+	localityMgr    *LocalityManager
+	aclMgr         *ACLManager
+
+	// Phase 3: Tracing
+	tracer *Tracer
+
+	// Phase 2: Content Store
+	contentStore *ContentStore
 
 	mu sync.RWMutex
 }
@@ -49,11 +63,29 @@ type Config struct {
 	LowWater  int
 	HighWater int
 
-	// 메시지 배칭 설정 (nil이면 배칭 비활성화)
+	// Phase 1: 메시지 배칭 설정 (nil이면 배칭 비활성화)
 	BatchConfig *BatchConfig
 
-	// GossipSub 설정 (nil이면 기본 설정 사용)
+	// Phase 1: GossipSub 설정 (nil이면 기본 설정 사용)
 	GossipConfig *GossipSubConfig
+
+	// Phase 2: 피어 품질 모니터링 (nil이면 비활성화)
+	QualityConfig *PeerQualityConfig
+
+	// Phase 2: 계층적 토폴로지 (nil이면 비활성화)
+	TopologyConfig *TopologyConfig
+
+	// Phase 2: 지역성 클러스터링 (nil이면 비활성화)
+	LocalityConfig *LocalityConfig
+
+	// Phase 2: ACL 정책 (기본: PolicyAllowAll)
+	ACLPolicy ACLPolicy
+
+	// Phase 2: 컨텐츠 스토어 (nil이면 기본 설정)
+	ContentStoreConfig *ContentStoreConfig
+
+	// Phase 3: 분산 트레이싱 (nil이면 비활성화)
+	TracerConfig *TracerConfig
 }
 
 // DefaultConfig는 기본 설정을 반환합니다.
@@ -162,10 +194,50 @@ func NewNode(ctx context.Context, cfg *Config) (*Node, error) {
 		metrics:   NewNetworkMetrics(),
 	}
 
-	// Initialize batcher if configured
+	// Phase 1: Initialize batcher if configured
 	if cfg.BatchConfig != nil {
 		node.batcher = NewMessageBatcher(*cfg.BatchConfig, node.publishDirect)
 		node.batcher.Start(ctx)
+	}
+
+	// Phase 2: Initialize peer quality monitor
+	if cfg.QualityConfig != nil {
+		node.qualityMonitor = NewPeerQualityMonitor(h, *cfg.QualityConfig)
+		node.qualityMonitor.Start()
+	} else {
+		// Default quality monitor for topology/locality
+		node.qualityMonitor = NewPeerQualityMonitor(h, DefaultPeerQualityConfig())
+		node.qualityMonitor.Start()
+	}
+
+	// Phase 2: Initialize topology manager
+	if cfg.TopologyConfig != nil {
+		criteria := DefaultSuperPeerCriteria()
+		node.topologyMgr = NewTopologyManager(h, *cfg.TopologyConfig, criteria)
+		node.topologyMgr.SetQualityMonitor(node.qualityMonitor)
+		node.topologyMgr.Start()
+	}
+
+	// Phase 2: Initialize locality manager
+	if cfg.LocalityConfig != nil {
+		node.localityMgr = NewLocalityManager(h, *cfg.LocalityConfig)
+		node.localityMgr.SetQualityMonitor(node.qualityMonitor)
+		node.localityMgr.Start()
+	}
+
+	// Phase 2: Initialize ACL manager
+	node.aclMgr = NewACLManager(cfg.ACLPolicy)
+
+	// Phase 2: Initialize content store
+	if cfg.ContentStoreConfig != nil {
+		node.contentStore = NewContentStore(*cfg.ContentStoreConfig)
+	} else {
+		node.contentStore = NewContentStore(DefaultContentStoreConfig())
+	}
+
+	// Phase 3: Initialize tracer
+	if cfg.TracerConfig != nil {
+		node.tracer = NewTracer(*cfg.TracerConfig)
 	}
 
 	return node, nil
@@ -224,7 +296,14 @@ func (n *Node) JoinTopic(topicName string) (*pubsub.Topic, error) {
 }
 
 // Subscribe는 토픽을 구독합니다.
+// ACL 체크를 수행하여 권한이 없으면 거부합니다.
 func (n *Node) Subscribe(topicName string) (*pubsub.Subscription, error) {
+	// Phase 2: ACL check
+	if n.aclMgr != nil && !n.aclMgr.CanSubscribe(topicName, n.host.ID()) {
+		n.metrics.RecordError("subscribe_acl_denied")
+		return nil, ErrAccessDenied
+	}
+
 	topic, err := n.JoinTopic(topicName)
 	if err != nil {
 		return nil, err
@@ -247,9 +326,42 @@ func (n *Node) Subscribe(topicName string) (*pubsub.Subscription, error) {
 }
 
 // Publish는 토픽에 메시지를 발행합니다.
-// 배칭이 활성화되어 있으면 배치에 추가하고, 그렇지 않으면 직접 발행합니다.
-// 메시지가 1KB 이상이고 20% 이상 압축되면 zstd 압축을 적용합니다.
+// ACL 체크, 암호화, 배칭, 압축을 순차적으로 적용합니다.
 func (n *Node) Publish(ctx context.Context, topicName string, data []byte) error {
+	// Phase 3: Start tracing span
+	var span *Span
+	if n.tracer != nil {
+		span, ctx = n.tracer.StartSpanFromContext(ctx, "publish")
+		if span != nil {
+			span.SetTag("topic", topicName)
+			span.SetTag("size", fmt.Sprintf("%d", len(data)))
+			defer n.tracer.EndSpan(span)
+		}
+	}
+
+	// Phase 2: ACL check
+	if n.aclMgr != nil && !n.aclMgr.CanPublish(topicName, n.host.ID()) {
+		if span != nil {
+			span.SetError()
+			span.SetTag("error", "access_denied")
+		}
+		n.metrics.RecordError("publish_acl_denied")
+		return ErrAccessDenied
+	}
+
+	// Phase 2: Encrypt if ACL has encryption enabled
+	var err error
+	if n.aclMgr != nil {
+		data, err = n.aclMgr.Encrypt(topicName, data)
+		if err != nil {
+			if span != nil {
+				span.SetError()
+			}
+			n.metrics.RecordError("publish_encrypt_failed")
+			return err
+		}
+	}
+
 	// If batching is enabled, add to batch
 	if n.batcher != nil {
 		return n.batcher.Add(ctx, topicName, data)
@@ -320,9 +432,25 @@ func (n *Node) PeerInfo(id peer.ID) peer.AddrInfo {
 
 // Close는 노드를 종료합니다.
 func (n *Node) Close() error {
-	// Stop batcher first to flush pending messages
+	// Phase 1: Stop batcher first to flush pending messages
 	if n.batcher != nil {
 		n.batcher.Stop()
+	}
+
+	// Phase 3: Flush tracer spans
+	if n.tracer != nil {
+		_ = n.tracer.Flush(context.Background())
+	}
+
+	// Phase 2: Stop managers
+	if n.topologyMgr != nil {
+		n.topologyMgr.Stop()
+	}
+	if n.localityMgr != nil {
+		n.localityMgr.Stop()
+	}
+	if n.qualityMonitor != nil {
+		n.qualityMonitor.Stop()
 	}
 
 	n.mu.Lock()
@@ -388,4 +516,56 @@ func (n *Node) GetMetricsSnapshot() MetricsSnapshot {
 	n.metrics.mu.Unlock()
 
 	return n.metrics.Snapshot()
+}
+
+// Phase 2-3 Manager Accessors
+
+// QualityMonitor returns the peer quality monitor
+func (n *Node) QualityMonitor() *PeerQualityMonitor {
+	return n.qualityMonitor
+}
+
+// TopologyManager returns the topology manager
+func (n *Node) TopologyManager() *TopologyManager {
+	return n.topologyMgr
+}
+
+// LocalityManager returns the locality manager
+func (n *Node) LocalityManager() *LocalityManager {
+	return n.localityMgr
+}
+
+// ACLManager returns the ACL manager
+func (n *Node) ACLManager() *ACLManager {
+	return n.aclMgr
+}
+
+// ContentStore returns the content store
+func (n *Node) ContentStore() *ContentStore {
+	return n.contentStore
+}
+
+// Tracer returns the distributed tracer
+func (n *Node) Tracer() *Tracer {
+	return n.tracer
+}
+
+// DecryptMessage decrypts a received message using the topic's ACL
+func (n *Node) DecryptMessage(topicName string, data []byte) ([]byte, error) {
+	if n.aclMgr == nil {
+		return data, nil
+	}
+	return n.aclMgr.Decrypt(topicName, data)
+}
+
+// DecompressAndDecrypt decompresses and decrypts a received message
+func (n *Node) DecompressAndDecrypt(topicName string, data []byte) ([]byte, error) {
+	// First decompress
+	decompressed, err := DecompressMessage(data)
+	if err != nil {
+		return nil, err
+	}
+
+	// Then decrypt
+	return n.DecryptMessage(topicName, decompressed)
 }
