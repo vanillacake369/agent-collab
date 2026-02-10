@@ -182,6 +182,22 @@ release:
 
     **Full Changelog**: https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab/compare/{{ .PreviousTag }}...{{ .Tag }}
 
+# Homebrew
+brews:
+  - name: agent-collab
+    repository:
+      owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/agent-collab"
+    description: "P2P-based distributed collaboration system for AI agents"
+    license: "MIT"
+    install: |
+      bin.install "agent-collab"
+    test: |
+      system "#{bin}/agent-collab", "version"
+
 # DEB/RPM/APK packages
 nfpms:
   - id: packages
