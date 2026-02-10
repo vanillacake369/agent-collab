@@ -19,8 +19,8 @@
 
           src = self;
 
-          # Update this hash after first build attempt
-          vendorHash = null;
+          # Hash of go.sum dependencies (use lib.fakeHash to recalculate)
+          vendorHash = "sha256-myTGzN21Xb4hNHemeFwEjJaz7f4I6byk61PS+BTbcbo=";
 
           ldflags = [
             "-s" "-w"
@@ -30,7 +30,11 @@
             "-X main.builtBy=nix"
           ];
 
-          subPackages = [ "cmd/agent-collab" ];
+          subPackages = [ "src" ];
+
+          postInstall = ''
+            mv $out/bin/src $out/bin/agent-collab
+          '';
 
           # Skip tests during build (they require network)
           doCheck = false;
