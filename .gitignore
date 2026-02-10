@@ -1,5 +1,9 @@
 # Binaries
 bin/
+agent-collab
+agent-collab-linux-*
+agent-collab-darwin-*
+agent-collab-windows-*
 *.exe
 *.exe~
 *.dll

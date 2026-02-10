@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | xargs -I {} sh -c 'echo \"[agent-collab] Checking lock for: {}\" >&2; echo \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"method\\\":\\\"tools/call\\\",\\\"params\\\":{\\\"name\\\":\\\"acquire_lock\\\",\\\"arguments\\\":{\\\"file_path\\\":\\\"{}\\\",\\\"start_line\\\":1,\\\"end_line\\\":9999,\\\"intention\\\":\\\"editing file\\\"}}}\" | agent-collab mcp serve 2>/dev/null | jq -r \".result.content[0].text\" >&2'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | xargs -I {} sh -c 'echo \"[agent-collab] File modified: {}\" >&2'"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[agent-collab] Checking cluster status...' >&2; STATUS=$(echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"cluster_status\",\"arguments\":{}}}' | agent-collab mcp serve 2>/dev/null | jq -r '.result.content[0].text' 2>/dev/null); if echo \"$STATUS\" | jq -e '.running == true' >/dev/null 2>&1; then PEERS=$(echo \"$STATUS\" | jq -r '.peer_count'); echo \"[agent-collab] Connected to cluster with $PEERS peers\" >&2; else echo '[agent-collab] Not connected to cluster. Run: agent-collab daemon start' >&2; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
