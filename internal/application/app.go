@@ -55,10 +55,12 @@ type App struct {
 
 // Config는 애플리케이션 설정입니다.
 type Config struct {
-	ProjectName string   `json:"project_name"`
-	DataDir     string   `json:"data_dir"`
-	ListenPort  int      `json:"listen_port"`
-	Bootstrap   []string `json:"bootstrap"`
+	ProjectName   string   `json:"project_name"`
+	DataDir       string   `json:"data_dir"`
+	ListenPort    int      `json:"listen_port"`
+	ListenAddrs   []string `json:"listen_addrs,omitempty"`   // 실제 바인딩된 주소들
+	Bootstrap     []string `json:"bootstrap"`                // Bootstrap peer 주소들
+	BootstrapPeer string   `json:"bootstrap_peer,omitempty"` // Bootstrap peer ID
 
 	// WireGuard VPN settings
 	WireGuard *WireGuardConfig `json:"wireguard,omitempty"`
@@ -182,12 +184,14 @@ func (a *App) InitializeWithOptions(ctx context.Context, opts *InitializeOptions
 		return nil, fmt.Errorf("failed to initialize Phase 3 components: %w", err)
 	}
 
-	// 6. Build address string list
+	// 6. Build address string list and save to config
 	addrs := a.node.Addrs()
 	addrStrs := make([]string, len(addrs))
 	for i, addr := range addrs {
 		addrStrs[i] = addr.String()
 	}
+	// Save the actual listen addresses for daemon restart
+	a.config.ListenAddrs = addrStrs
 
 	// 7. Create invite token
 	var tokenStr string
@@ -331,10 +335,30 @@ func (a *App) LoadFromConfig(ctx context.Context) error {
 	}
 	a.keyPair = keyPair
 
-	// Create libp2p node
+	// Create libp2p node with saved listen addresses
 	nodeConfig := libp2p.DefaultConfig()
 	nodeConfig.PrivateKey = keyPair.PrivateKey
 	nodeConfig.ProjectID = a.config.ProjectName
+
+	// Use saved listen addresses if available (to keep same ports)
+	if len(a.config.ListenAddrs) > 0 {
+		nodeConfig.ListenAddrs = a.config.ListenAddrs
+	}
+
+	// Load bootstrap peers if configured
+	if len(a.config.Bootstrap) > 0 {
+		for _, addrStr := range a.config.Bootstrap {
+			ma, err := multiaddr.NewMultiaddr(addrStr)
+			if err != nil {
+				continue
+			}
+			peerInfo, err := peer.AddrInfoFromP2pAddr(ma)
+			if err != nil {
+				continue
+			}
+			nodeConfig.BootstrapPeers = append(nodeConfig.BootstrapPeers, *peerInfo)
+		}
+	}
 
 	node, err := libp2p.NewNode(ctx, nodeConfig)
 	if err != nil {
@@ -452,6 +476,20 @@ func (a *App) Join(ctx context.Context, tokenStr string) (*JoinResult, error) {
 		fmt.Printf("Bootstrap warning: %v\n", err)
 	}
 
+	// 9. Save listen addresses and bootstrap info to config
+	addrs := a.node.Addrs()
+	a.config.ListenAddrs = make([]string, len(addrs))
+	for i, addr := range addrs {
+		a.config.ListenAddrs[i] = addr.String()
+	}
+	a.config.Bootstrap = token.Addresses
+	a.config.BootstrapPeer = token.CreatorID
+
+	// Save config for daemon to load later
+	if err := a.saveConfig(); err != nil {
+		fmt.Printf("Warning: failed to save config: %v\n", err)
+	}
+
 	result := &JoinResult{
 		ProjectName:    token.ProjectName,
 		NodeID:         nodeIDStr,
@@ -536,6 +574,33 @@ func (a *App) Start() error {
 	a.ctx = ctx
 	a.cancel = cancel
 	a.running = true
+
+	// Bootstrap to peers if configured
+	if len(a.config.Bootstrap) > 0 && a.config.BootstrapPeer != "" {
+		// Parse bootstrap peer ID
+		bootstrapPeerID, err := peer.Decode(a.config.BootstrapPeer)
+		if err == nil {
+			var bootstrapAddrs []multiaddr.Multiaddr
+			for _, addrStr := range a.config.Bootstrap {
+				ma, err := multiaddr.NewMultiaddr(addrStr)
+				if err != nil {
+					continue
+				}
+				bootstrapAddrs = append(bootstrapAddrs, ma)
+			}
+			if len(bootstrapAddrs) > 0 {
+				bootstrapPeers := []peer.AddrInfo{{
+					ID:    bootstrapPeerID,
+					Addrs: bootstrapAddrs,
+				}}
+				go func() {
+					if err := a.node.Bootstrap(ctx, bootstrapPeers); err != nil {
+						fmt.Printf("Bootstrap warning: %v\n", err)
+					}
+				}()
+			}
+		}
+	}
 
 	// 동기화 관리자 시작
 	a.syncManager.Start(ctx)
@@ -640,10 +705,27 @@ func (a *App) setupMessageHandlers() {
 	})
 }
 
-// LockMessage is a message for lock operations.
-type LockMessage struct {
-	Type string          `json:"type"`
-	Data json.RawMessage `json:"data"`
+// LockMessageBase is a base type for determining message type.
+type LockMessageBase struct {
+	Type string `json:"type"`
+}
+
+// IntentMessageWrapper matches the format from lock.IntentMessage.
+type IntentMessageWrapper struct {
+	Type   string           `json:"type"`
+	Intent *lock.LockIntent `json:"intent"`
+}
+
+// AcquireMessageWrapper matches the format from lock.AcquireMessage.
+type AcquireMessageWrapper struct {
+	Type string             `json:"type"`
+	Lock *lock.SemanticLock `json:"lock"`
+}
+
+// ReleaseMessageWrapper matches the format from lock.ReleaseMessage.
+type ReleaseMessageWrapper struct {
+	Type   string `json:"type"`
+	LockID string `json:"lock_id"`
 }
 
 // processLockMessages processes incoming lock messages from P2P network.
@@ -670,46 +752,81 @@ func (a *App) processLockMessages(ctx context.Context) {
 			continue
 		}
 
-		var lockMsg LockMessage
-		if err := json.Unmarshal(msg.Data, &lockMsg); err != nil {
-			fmt.Printf("Error unmarshaling lock message: %v\n", err)
+		// Decompress message if needed
+		data, err := libp2p.DecompressMessage(msg.Data)
+		if err != nil {
+			// Try raw data for backward compatibility
+			data = msg.Data
+		}
+
+		// Handle batch or single message
+		messages, err := libp2p.UnbatchMessage(data)
+		if err != nil {
+			fmt.Printf("Error unbatching lock message: %v\n", err)
 			continue
 		}
 
-		switch lockMsg.Type {
-		case "intent":
-			var intent lock.LockIntent
-			if err := json.Unmarshal(lockMsg.Data, &intent); err != nil {
-				fmt.Printf("Error unmarshaling lock intent: %v\n", err)
-				continue
-			}
-			if err := a.lockService.HandleRemoteLockIntent(&intent); err != nil {
-				fmt.Printf("Error handling lock intent: %v\n", err)
-			}
-
-		case "acquired":
-			var semanticLock lock.SemanticLock
-			if err := json.Unmarshal(lockMsg.Data, &semanticLock); err != nil {
-				fmt.Printf("Error unmarshaling acquired lock: %v\n", err)
-				continue
-			}
-			if err := a.lockService.HandleRemoteLockAcquired(&semanticLock); err != nil {
-				fmt.Printf("Error handling lock acquired: %v\n", err)
-			}
-
-		case "released":
-			var releaseMsg struct {
-				LockID string `json:"lock_id"`
-			}
-			if err := json.Unmarshal(lockMsg.Data, &releaseMsg); err != nil {
-				fmt.Printf("Error unmarshaling lock release: %v\n", err)
-				continue
-			}
-			if err := a.lockService.HandleRemoteLockReleased(releaseMsg.LockID); err != nil {
-				fmt.Printf("Error handling lock released: %v\n", err)
-			}
+		for _, msgData := range messages {
+			a.handleSingleLockMessage(msgData)
 		}
 	}
+}
+
+// handleSingleLockMessage processes a single lock message
+func (a *App) handleSingleLockMessage(data []byte) {
+	var baseMsg LockMessageBase
+	if err := json.Unmarshal(data, &baseMsg); err != nil {
+		fmt.Printf("Error unmarshaling lock message type: %v\n", err)
+		return
+	}
+
+	switch baseMsg.Type {
+	case "lock_intent":
+		var intentMsg IntentMessageWrapper
+		if err := json.Unmarshal(data, &intentMsg); err != nil {
+			fmt.Printf("Error unmarshaling lock intent: %v\n", err)
+			return
+		}
+		if intentMsg.Intent == nil {
+			fmt.Printf("Received lock_intent with nil intent\n")
+			return
+		}
+		if err := a.lockService.HandleRemoteLockIntent(intentMsg.Intent); err != nil {
+			fmt.Printf("Error handling lock intent: %v\n", err)
+		}
+
+	case "lock_acquired":
+		var acquireMsg AcquireMessageWrapper
+		if err := json.Unmarshal(data, &acquireMsg); err != nil {
+			fmt.Printf("Error unmarshaling acquired lock: %v\n", err)
+			return
+		}
+		if acquireMsg.Lock == nil {
+			fmt.Printf("Received lock_acquired with nil lock\n")
+			return
+		}
+		if err := a.lockService.HandleRemoteLockAcquired(acquireMsg.Lock); err != nil {
+			fmt.Printf("Error handling lock acquired: %v\n", err)
+		}
+
+	case "lock_released":
+		var releaseMsg ReleaseMessageWrapper
+		if err := json.Unmarshal(data, &releaseMsg); err != nil {
+			fmt.Printf("Error unmarshaling lock release: %v\n", err)
+			return
+		}
+		if err := a.lockService.HandleRemoteLockReleased(releaseMsg.LockID); err != nil {
+			fmt.Printf("Error handling lock released: %v\n", err)
+		}
+
+	default:
+		fmt.Printf("Unknown lock message type: %s\n", baseMsg.Type)
+	}
+}
+
+// ContextMessageBase is used to determine the message type.
+type ContextMessageBase struct {
+	Type string `json:"type"`
 }
 
 // processContextMessages processes incoming context sync messages from P2P network.
@@ -736,16 +853,197 @@ func (a *App) processContextMessages(ctx context.Context) {
 			continue
 		}
 
-		var delta ctxsync.Delta
-		if err := json.Unmarshal(msg.Data, &delta); err != nil {
-			fmt.Printf("Error unmarshaling delta: %v\n", err)
+		// Decompress message if needed
+		data, err := libp2p.DecompressMessage(msg.Data)
+		if err != nil {
+			// Try raw data for backward compatibility
+			data = msg.Data
+		}
+
+		// Handle batch or single message
+		messages, err := libp2p.UnbatchMessage(data)
+		if err != nil {
+			fmt.Printf("Error unbatching context message: %v\n", err)
 			continue
+		}
+
+		for _, msgData := range messages {
+			a.handleSingleContextMessage(ctx, msgData)
+		}
+	}
+}
+
+// handleSingleContextMessage processes a single context message
+func (a *App) handleSingleContextMessage(ctx context.Context, data []byte) {
+	var baseMsg ContextMessageBase
+	if err := json.Unmarshal(data, &baseMsg); err != nil {
+		fmt.Printf("Error unmarshaling context message type: %v\n", err)
+		return
+	}
+
+	switch baseMsg.Type {
+	case "shared_context":
+		// Handle shared context from peers
+		var ctxMsg ContextMessage
+		if err := json.Unmarshal(data, &ctxMsg); err != nil {
+			fmt.Printf("Error unmarshaling shared context: %v\n", err)
+			return
+		}
+		a.handleSharedContext(ctx, &ctxMsg)
+
+	default:
+		// Assume it's a Delta message (for backward compatibility)
+		var delta ctxsync.Delta
+		if err := json.Unmarshal(data, &delta); err != nil {
+			fmt.Printf("Error unmarshaling delta: %v\n", err)
+			return
 		}
 
 		if err := a.syncManager.ReceiveDelta(&delta); err != nil {
 			fmt.Printf("Error handling delta: %v\n", err)
 		}
+
+		// Also store in VectorDB if it's a file change with content
+		a.storeDeltaInVectorDB(ctx, &delta)
 	}
+}
+
+// handleSharedContext processes shared context from a peer and stores it in VectorDB.
+func (a *App) handleSharedContext(ctx context.Context, msg *ContextMessage) {
+	if a.vectorStore == nil {
+		return
+	}
+
+	// Use provided embedding or generate new one
+	embedding := msg.Embedding
+	if len(embedding) == 0 && a.embedService != nil && msg.Content != "" {
+		var err error
+		embedding, err = a.embedService.Embed(ctx, msg.Content)
+		if err != nil {
+			fmt.Printf("Error generating embedding for shared context: %v\n", err)
+			return
+		}
+	}
+
+	// Create and store document
+	doc := &vector.Document{
+		Content:   msg.Content,
+		Embedding: embedding,
+		FilePath:  msg.FilePath,
+		Metadata:  msg.Metadata,
+	}
+	if doc.Metadata == nil {
+		doc.Metadata = make(map[string]any)
+	}
+	doc.Metadata["source_id"] = msg.SourceID
+	doc.Metadata["type"] = "shared_context"
+
+	if err := a.vectorStore.Insert(doc); err != nil {
+		fmt.Printf("Error storing shared context in VectorDB: %v\n", err)
+		return
+	}
+
+	// Async flush
+	go func() {
+		if err := a.vectorStore.Flush(); err != nil {
+			fmt.Printf("Error flushing VectorDB: %v\n", err)
+		}
+	}()
+
+	fmt.Printf("Received shared context from %s: %s\n", msg.SourceID, msg.FilePath)
+}
+
+// storeDeltaInVectorDB stores delta content in VectorDB for search.
+func (a *App) storeDeltaInVectorDB(ctx context.Context, delta *ctxsync.Delta) {
+	if a.vectorStore == nil || a.embedService == nil {
+		return
+	}
+
+	// Only process file changes
+	if delta.Type != ctxsync.DeltaFileChange || delta.Payload.FilePath == "" {
+		return
+	}
+
+	// Build content description from delta info
+	content := fmt.Sprintf("File change: %s from %s",
+		delta.Payload.FilePath, delta.SourceName)
+
+	// Add symbol info if available
+	if delta.Payload.FileDiff != nil {
+		for _, d := range delta.Payload.FileDiff.Diffs {
+			if d.Symbol != nil {
+				content += fmt.Sprintf("\n%s %s: %s",
+					d.Type, d.Symbol.Type, d.Symbol.Name)
+			}
+		}
+	}
+
+	// Generate embedding
+	embedding, err := a.embedService.Embed(ctx, content)
+	if err != nil {
+		fmt.Printf("Error generating embedding for delta: %v\n", err)
+		return
+	}
+
+	// Create and store document
+	doc := &vector.Document{
+		Content:   content,
+		Embedding: embedding,
+		FilePath:  delta.Payload.FilePath,
+		Metadata: map[string]any{
+			"source_id":   delta.SourceID,
+			"source_name": delta.SourceName,
+			"delta_id":    delta.ID,
+			"timestamp":   delta.Timestamp,
+			"type":        "delta_sync",
+		},
+	}
+
+	if err := a.vectorStore.Insert(doc); err != nil {
+		fmt.Printf("Error storing delta in VectorDB: %v\n", err)
+		return
+	}
+
+	// Async flush to avoid blocking
+	go func() {
+		if err := a.vectorStore.Flush(); err != nil {
+			fmt.Printf("Error flushing VectorDB: %v\n", err)
+		}
+	}()
+}
+
+// ContextMessage is a message for sharing context via P2P.
+type ContextMessage struct {
+	Type      string         `json:"type"`
+	FilePath  string         `json:"file_path"`
+	Content   string         `json:"content"`
+	Embedding []float32      `json:"embedding,omitempty"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	SourceID  string         `json:"source_id"`
+}
+
+// BroadcastContext broadcasts shared context to all peers.
+func (a *App) BroadcastContext(filePath, content string, embedding []float32, metadata map[string]any) error {
+	if a.node == nil {
+		return fmt.Errorf("node not initialized")
+	}
+
+	msg := ContextMessage{
+		Type:      "shared_context",
+		FilePath:  filePath,
+		Content:   content,
+		Embedding: embedding,
+		Metadata:  metadata,
+		SourceID:  a.node.ID().String(),
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	topicName := "/agent-collab/" + a.config.ProjectName + "/context"
+	return a.node.Publish(a.ctx, topicName, data)
 }
 
 // GetStatus는 상태를 반환합니다.
