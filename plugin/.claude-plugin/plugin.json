@@ -1,0 +1,13 @@
+{
+  "name": "agent-collab",
+  "description": "Multi-agent collaboration tools for Claude Code. Enables context sharing, lock management, and event notifications across multiple Claude instances.",
+  "version": "1.0.0",
+  "author": {
+    "name": "agent-collab",
+    "email": "support@agent-collab.dev"
+  },
+  "homepage": "https://github.com/vanillacake369/agent-collab",
+  "repository": "https://github.com/vanillacake369/agent-collab",
+  "license": "MIT",
+  "keywords": ["collaboration", "multi-agent", "context-sharing", "p2p"]
+}

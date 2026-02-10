@@ -25,6 +25,8 @@ type Node struct {
 	topics    map[string]*pubsub.Topic
 	subs      map[string]*pubsub.Subscription
 	projectID string
+	batcher   *MessageBatcher
+	metrics   *NetworkMetrics
 
 	mu sync.RWMutex
 }
@@ -46,6 +48,12 @@ type Config struct {
 	// 연결 관리 설정
 	LowWater  int
 	HighWater int
+
+	// 메시지 배칭 설정 (nil이면 배칭 비활성화)
+	BatchConfig *BatchConfig
+
+	// GossipSub 설정 (nil이면 기본 설정 사용)
+	GossipConfig *GossipSubConfig
 }
 
 // DefaultConfig는 기본 설정을 반환합니다.
@@ -127,10 +135,17 @@ func NewNode(ctx context.Context, cfg *Config) (*Node, error) {
 	}
 
 	// Gossipsub 초기화
-	ps, err := pubsub.NewGossipSub(ctx, h,
+	gossipOpts := []pubsub.Option{
 		pubsub.WithPeerExchange(true),
 		pubsub.WithFloodPublish(true),
-	)
+	}
+
+	// Apply custom GossipSub config if provided
+	if cfg.GossipConfig != nil {
+		gossipOpts = cfg.GossipConfig.ToOptions()
+	}
+
+	ps, err := pubsub.NewGossipSub(ctx, h, gossipOpts...)
 	if err != nil {
 		kadDHT.Close()
 		h.Close()
@@ -144,6 +159,13 @@ func NewNode(ctx context.Context, cfg *Config) (*Node, error) {
 		topics:    make(map[string]*pubsub.Topic),
 		subs:      make(map[string]*pubsub.Subscription),
 		projectID: cfg.ProjectID,
+		metrics:   NewNetworkMetrics(),
+	}
+
+	// Initialize batcher if configured
+	if cfg.BatchConfig != nil {
+		node.batcher = NewMessageBatcher(*cfg.BatchConfig, node.publishDirect)
+		node.batcher.Start(ctx)
 	}
 
 	return node, nil
@@ -225,13 +247,65 @@ func (n *Node) Subscribe(topicName string) (*pubsub.Subscription, error) {
 }
 
 // Publish는 토픽에 메시지를 발행합니다.
+// 배칭이 활성화되어 있으면 배치에 추가하고, 그렇지 않으면 직접 발행합니다.
+// 메시지가 1KB 이상이고 20% 이상 압축되면 zstd 압축을 적용합니다.
 func (n *Node) Publish(ctx context.Context, topicName string, data []byte) error {
+	// If batching is enabled, add to batch
+	if n.batcher != nil {
+		return n.batcher.Add(ctx, topicName, data)
+	}
+
+	// Otherwise publish directly with compression
+	return n.publishDirect(ctx, topicName, data)
+}
+
+// publishDirect publishes a message directly (used by batcher)
+func (n *Node) publishDirect(ctx context.Context, topicName string, data []byte) error {
+	topic, err := n.JoinTopic(topicName)
+	if err != nil {
+		n.metrics.RecordError("publish_join_topic")
+		return err
+	}
+
+	// Apply compression
+	originalSize := len(data)
+	compressed := CompressMessage(data)
+	compressedSize := len(compressed)
+
+	// Record metrics
+	n.metrics.RecordCompression(originalSize, compressedSize)
+	n.metrics.RecordMessageSent(topicName, "message", compressedSize)
+
+	err = topic.Publish(ctx, compressed)
+	if err != nil {
+		n.metrics.RecordError("publish_failed")
+	}
+	return err
+}
+
+// PublishRaw는 압축/배칭 없이 메시지를 발행합니다.
+func (n *Node) PublishRaw(ctx context.Context, topicName string, data []byte) error {
 	topic, err := n.JoinTopic(topicName)
 	if err != nil {
 		return err
 	}
 
 	return topic.Publish(ctx, data)
+}
+
+// FlushBatch flushes pending batched messages for a topic
+func (n *Node) FlushBatch(ctx context.Context, topicName string) error {
+	if n.batcher == nil {
+		return nil
+	}
+	return n.batcher.Flush(ctx, topicName)
+}
+
+// FlushAllBatches flushes all pending batched messages
+func (n *Node) FlushAllBatches(ctx context.Context) {
+	if n.batcher != nil {
+		n.batcher.FlushAll(ctx)
+	}
 }
 
 // ConnectedPeers는 연결된 peer 목록을 반환합니다.
@@ -244,8 +318,18 @@ func (n *Node) PeerInfo(id peer.ID) peer.AddrInfo {
 	return n.host.Peerstore().PeerInfo(id)
 }
 
+// Latency returns the latency to a peer.
+func (n *Node) Latency(id peer.ID) time.Duration {
+	return n.host.Peerstore().LatencyEWMA(id)
+}
+
 // Close는 노드를 종료합니다.
 func (n *Node) Close() error {
+	// Stop batcher first to flush pending messages
+	if n.batcher != nil {
+		n.batcher.Stop()
+	}
+
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -294,4 +378,19 @@ func (n *Node) GetSubscription(topicName string) *pubsub.Subscription {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	return n.subs[topicName]
+}
+
+// Metrics returns the network metrics collector
+func (n *Node) Metrics() *NetworkMetrics {
+	return n.metrics
+}
+
+// GetMetricsSnapshot returns a snapshot of current metrics
+func (n *Node) GetMetricsSnapshot() MetricsSnapshot {
+	// Update peer count
+	n.metrics.mu.Lock()
+	n.metrics.peersConnected = len(n.host.Network().Peers())
+	n.metrics.mu.Unlock()
+
+	return n.metrics.Snapshot()
 }

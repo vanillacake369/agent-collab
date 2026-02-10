@@ -5,6 +5,7 @@ on:
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
+
 jobs:
   release:
     name: GoReleaser
@@ -12,21 +13,31 @@ jobs:
     permissions:
       contents: write
       packages: write
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Get version
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
+
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
@@ -35,3 +46,185 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Upload deb packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-packages
+          path: dist/*.deb
+          retention-days: 1
+
+  build-apt-repo:
+    name: Build APT Repository
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download deb packages
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-packages
+          path: ./debs
+
+      - name: List downloaded packages
+        run: ls -la ./debs/
+
+      - name: Import GPG key
+        id: import_gpg
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.APT_GPG_PASSPHRASE }}
+
+      - name: Install reprepro
+        run: sudo apt-get update && sudo apt-get install -y reprepro
+
+      - name: Setup APT repository structure
+        run: |
+          mkdir -p apt-repo/conf
+          mkdir -p apt-repo/pool/main
+
+          # Create reprepro configuration
+          cat > apt-repo/conf/distributions << EOF
+          Origin: ${{ github.repository_owner }}
+          Label: agent-collab
+          Suite: stable
+          Codename: stable
+          Version: 1.0
+          Architectures: amd64 arm64 armhf
+          Components: main
+          Description: APT repository for agent-collab
+          SignWith: ${{ steps.import_gpg.outputs.fingerprint }}
+          EOF
+
+          cat > apt-repo/conf/options << EOF
+          verbose
+          ask-passphrase
+          EOF
+
+      - name: Add packages to repository
+        run: |
+          cd apt-repo
+          for deb in ../debs/*.deb; do
+            if [ -f "$deb" ]; then
+              echo "Adding $deb to repository..."
+              reprepro includedeb stable "$deb"
+            fi
+          done
+
+      - name: Export GPG public key
+        run: |
+          gpg --armor --export ${{ steps.import_gpg.outputs.fingerprint }} > apt-repo/gpg.key
+
+      - name: Create install script
+        run: |
+          cat > apt-repo/install.sh << 'INSTALL_EOF'
+          #!/bin/bash
+          set -e
+
+          REPO_OWNER="${REPO_OWNER:-vanillacake369}"
+          REPO_URL="https://${REPO_OWNER}.github.io/agent-collab"
+
+          echo "Installing agent-collab APT repository..."
+
+          # Download and install GPG key
+          curl -fsSL "${REPO_URL}/gpg.key" | sudo gpg --dearmor -o /usr/share/keyrings/agent-collab.gpg
+
+          # Add repository
+          echo "deb [signed-by=/usr/share/keyrings/agent-collab.gpg] ${REPO_URL} stable main" | \
+            sudo tee /etc/apt/sources.list.d/agent-collab.list
+
+          # Update and install
+          sudo apt update
+          sudo apt install -y agent-collab
+
+          echo ""
+          echo "agent-collab installed successfully!"
+          echo "Run 'agent-collab --help' to get started."
+          INSTALL_EOF
+          chmod +x apt-repo/install.sh
+
+          # Replace placeholder with actual owner
+          sed -i "s/vanillacake369/${{ github.repository_owner }}/g" apt-repo/install.sh
+
+      - name: Create index.html
+        run: |
+          cat > apt-repo/index.html << 'HTML_EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>agent-collab APT Repository</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; }
+              h1 { color: #333; }
+              code { background: #f4f4f4; padding: 0.2rem 0.4rem; border-radius: 4px; }
+              pre { background: #f4f4f4; padding: 1rem; border-radius: 8px; overflow-x: auto; }
+              .note { background: #e7f3ff; border-left: 4px solid #2196f3; padding: 1rem; margin: 1rem 0; }
+            </style>
+          </head>
+          <body>
+            <h1>agent-collab APT Repository</h1>
+
+            <h2>Quick Install</h2>
+            <pre>curl -fsSL https://REPO_OWNER.github.io/agent-collab/install.sh | sudo bash</pre>
+
+            <h2>Manual Installation</h2>
+            <pre># Add GPG key
+          curl -fsSL https://REPO_OWNER.github.io/agent-collab/gpg.key | \
+            sudo gpg --dearmor -o /usr/share/keyrings/agent-collab.gpg
+
+          # Add repository
+          echo "deb [signed-by=/usr/share/keyrings/agent-collab.gpg] \
+            https://REPO_OWNER.github.io/agent-collab stable main" | \
+            sudo tee /etc/apt/sources.list.d/agent-collab.list
+
+          # Install
+          sudo apt update
+          sudo apt install agent-collab</pre>
+
+            <div class="note">
+              <strong>Note:</strong> After adding the repository, you can update agent-collab with <code>sudo apt upgrade agent-collab</code>
+            </div>
+
+            <h2>Supported Architectures</h2>
+            <ul>
+              <li>amd64 (x86_64)</li>
+              <li>arm64 (aarch64)</li>
+              <li>armhf (armv7)</li>
+            </ul>
+
+            <h2>Links</h2>
+            <ul>
+              <li><a href="https://github.com/REPO_OWNER/agent-collab">GitHub Repository</a></li>
+              <li><a href="https://github.com/REPO_OWNER/agent-collab/releases">Releases</a></li>
+              <li><a href="./gpg.key">GPG Public Key</a></li>
+            </ul>
+          </body>
+          </html>
+          HTML_EOF
+
+          # Replace placeholder with actual owner
+          sed -i "s/REPO_OWNER/${{ github.repository_owner }}/g" apt-repo/index.html
+
+      - name: Upload APT repository artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apt-repo
+
+  deploy-apt-repo:
+    name: Deploy APT Repository
+    needs: build-apt-repo
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

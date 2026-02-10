@@ -76,16 +76,45 @@ func (h *EventHandler) handleEvent(event daemon.Event) {
 		var data daemon.LockConflictData
 		if err := json.Unmarshal(event.Data, &data); err == nil {
 			h.warnings = append(h.warnings,
-				"Lock conflict detected on "+data.FilePath+": held by "+data.HolderID)
+				"⚠️ Lock conflict detected on "+data.FilePath+": held by "+data.HolderID)
+		}
+	case daemon.EventLockAcquired:
+		var data daemon.LockEventData
+		if err := json.Unmarshal(event.Data, &data); err == nil {
+			h.warnings = append(h.warnings,
+				"🔒 Lock acquired on "+data.FilePath+" by "+data.AgentID+": "+data.Intention)
 		}
 	case daemon.EventAgentJoined:
 		var data daemon.AgentEventData
 		if err := json.Unmarshal(event.Data, &data); err == nil {
 			h.warnings = append(h.warnings,
-				"New agent joined: "+data.Name+" ("+data.Provider+")")
+				"👋 New agent joined: "+data.Name+" ("+data.Provider+")")
+		}
+	case daemon.EventContextUpdated:
+		var data daemon.ContextEventData
+		if err := json.Unmarshal(event.Data, &data); err == nil {
+			msg := "📄 Context shared"
+			if data.FilePath != "" {
+				msg += ": " + data.FilePath
+			}
+			if data.Content != "" {
+				// Truncate content for display
+				preview := data.Content
+				if len(preview) > 100 {
+					preview = preview[:100] + "..."
+				}
+				msg += " - " + preview
+			}
+			h.warnings = append(h.warnings, msg)
+		}
+	case daemon.EventPeerConnected:
+		var data daemon.PeerEventData
+		if err := json.Unmarshal(event.Data, &data); err == nil {
+			h.warnings = append(h.warnings,
+				"🔗 Peer connected: "+data.PeerID)
 		}
 	case daemon.EventDaemonShutdown:
-		h.warnings = append(h.warnings, "Daemon is shutting down")
+		h.warnings = append(h.warnings, "⛔ Daemon is shutting down")
 	}
 }
 
@@ -134,13 +163,13 @@ func (h *EventHandler) HasWarnings() bool {
 func RegisterEventTools(server *Server, handler *EventHandler) {
 	server.RegisterTool(Tool{
 		Name:        "get_events",
-		Description: "Get recent cluster events (lock acquisitions, agent joins, etc.)",
+		Description: "Get recent cluster events (lock acquisitions, context shares, agent joins, etc.)",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
 				"type": {
 					Type:        "string",
-					Description: "Filter by event type (optional). Values: lock.acquired, lock.released, lock.conflict, agent.joined, agent.left",
+					Description: "Filter by event type (optional). Values: lock.acquired, lock.released, lock.conflict, context.updated, context.synced, agent.joined, agent.left, peer.connected, peer.disconnected",
 				},
 				"limit": {
 					Type:        "integer",

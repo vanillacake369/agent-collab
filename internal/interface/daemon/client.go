@@ -232,6 +232,21 @@ func (c *Client) ListAgents() (*ListAgentsResponse, error) {
 	return &result, nil
 }
 
+// ListPeers returns connected peers.
+func (c *Client) ListPeers() (*ListPeersResponse, error) {
+	resp, err := c.get("/peers/list")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result ListPeersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // WatchFile starts watching a file.
 func (c *Client) WatchFile(filePath string) error {
 	resp, err := c.post("/context/watch", WatchFileRequest{FilePath: filePath})
@@ -248,6 +263,54 @@ func (c *Client) WatchFile(filePath string) error {
 		return fmt.Errorf("%s", result.Error)
 	}
 	return nil
+}
+
+// ListEventsResponse is the response for listing events.
+type ListEventsResponse struct {
+	Events []Event `json:"events"`
+	Count  int     `json:"count"`
+}
+
+// ListEvents returns recent events from the daemon.
+func (c *Client) ListEvents(limit int, eventType string) (*ListEventsResponse, error) {
+	path := fmt.Sprintf("/events/list?limit=%d", limit)
+	if eventType != "" {
+		path += "&type=" + eventType
+	}
+
+	resp, err := c.get(path)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result ListEventsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ShareContext shares context content with the cluster and stores in vector DB.
+func (c *Client) ShareContext(filePath, content string, metadata map[string]any) (*ShareContextResponse, error) {
+	resp, err := c.post("/context/share", ShareContextRequest{
+		FilePath: filePath,
+		Content:  content,
+		Metadata: metadata,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result ShareContextResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	if result.Error != "" {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	return &result, nil
 }
 
 // Shutdown shuts down the daemon.
