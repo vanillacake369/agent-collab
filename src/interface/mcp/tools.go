@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"agent-collab/src/application"
+	"agent-collab/src/domain/cohesion"
 	"agent-collab/src/infrastructure/storage/vector"
 )
 
@@ -155,6 +156,36 @@ func RegisterDefaultTools(server *Server, app *application.App) {
 		},
 	}, func(ctx context.Context, args map[string]any) (*ToolCallResult, error) {
 		return handleListAgents(ctx, app, args)
+	})
+
+	// Cohesion check tool
+	server.RegisterTool(Tool{
+		Name:        "check_cohesion",
+		Description: "Check if your intended work or completed result aligns with existing team context. Use 'before' type before starting work to check intention alignment, or 'after' type after completing work to verify result alignment.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"type": {
+					Type:        "string",
+					Description: "Check type: 'before' (check intention before work) or 'after' (check result after work)",
+				},
+				"intention": {
+					Type:        "string",
+					Description: "For 'before' type: describe what you intend to do",
+				},
+				"result": {
+					Type:        "string",
+					Description: "For 'after' type: describe what you have done",
+				},
+				"files_changed": {
+					Type:        "array",
+					Description: "For 'after' type: list of files that were modified",
+				},
+			},
+			Required: []string{"type"},
+		},
+	}, func(ctx context.Context, args map[string]any) (*ToolCallResult, error) {
+		return handleCheckCohesion(ctx, app, args)
 	})
 }
 
@@ -326,6 +357,60 @@ func handleListAgents(ctx context.Context, app *application.App, args map[string
 	}
 
 	data, _ := json.MarshalIndent(agents, "", "  ")
+	return textResult(string(data)), nil
+}
+
+func handleCheckCohesion(ctx context.Context, app *application.App, args map[string]any) (*ToolCallResult, error) {
+	vectorStore := app.VectorStore()
+	embedService := app.EmbeddingService()
+	if vectorStore == nil || embedService == nil {
+		return textResult("Error: Vector store or embedding service not initialized"), nil
+	}
+
+	checkType, _ := args["type"].(string)
+	if checkType == "" {
+		return textResult("Error: type is required ('before' or 'after')"), nil
+	}
+
+	req := &cohesion.CheckRequest{}
+
+	switch checkType {
+	case "before":
+		req.Type = cohesion.CheckTypeBefore
+		intention, _ := args["intention"].(string)
+		if intention == "" {
+			return textResult("Error: intention is required for 'before' check"), nil
+		}
+		req.Intention = intention
+
+	case "after":
+		req.Type = cohesion.CheckTypeAfter
+		result, _ := args["result"].(string)
+		if result == "" {
+			return textResult("Error: result is required for 'after' check"), nil
+		}
+		req.Result = result
+
+		// Parse files_changed if provided
+		if files, ok := args["files_changed"].([]any); ok {
+			for _, f := range files {
+				if path, ok := f.(string); ok {
+					req.FilesChanged = append(req.FilesChanged, path)
+				}
+			}
+		}
+
+	default:
+		return textResult("Error: type must be 'before' or 'after'"), nil
+	}
+
+	checker := cohesion.NewChecker(vectorStore, embedService)
+	checkResult, err := checker.Check(ctx, req)
+	if err != nil {
+		return textResult(fmt.Sprintf("Error checking cohesion: %v", err)), nil
+	}
+
+	data, _ := json.MarshalIndent(checkResult, "", "  ")
 	return textResult(string(data)), nil
 }
 

@@ -18,6 +18,10 @@ flowchart TB
         ET[embed_text]
     end
 
+    subgraph Cohesion["Cohesion Checking"]
+        CC[check_cohesion]
+    end
+
     subgraph Monitor["Monitoring"]
         GW[get_warnings]
         GE[get_events]
@@ -301,6 +305,109 @@ Generate embedding for text (advanced use).
   "model": "nomic-embed-text"
 }
 ```
+
+---
+
+## Cohesion Tools
+
+### check_cohesion
+
+Verify work aligns with team context.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `type` | string | Yes | `before` or `after` |
+| `intention` | string | For `before` | What you plan to do |
+| `result` | string | For `after` | What you completed |
+| `files_changed` | array | No | Files modified (for `after`) |
+
+**Before Check Request:**
+
+```json
+{
+  "tool": "check_cohesion",
+  "arguments": {
+    "type": "before",
+    "intention": "Switch authentication from JWT to session-based"
+  }
+}
+```
+
+**After Check Request:**
+
+```json
+{
+  "tool": "check_cohesion",
+  "arguments": {
+    "type": "after",
+    "result": "Replaced JWT tokens with session cookies",
+    "files_changed": ["auth/handler.go", "auth/session.go"]
+  }
+}
+```
+
+**Cohesive Response:**
+
+```json
+{
+  "verdict": "cohesive",
+  "confidence": 0.85,
+  "related_contexts": [
+    {
+      "id": "ctx-abc123",
+      "agent": "Agent-A",
+      "file_path": "auth/handler.go",
+      "content": "JWT authentication implemented",
+      "similarity": 0.78
+    }
+  ],
+  "potential_conflicts": [],
+  "suggestions": [
+    "Review related contexts for additional information"
+  ],
+  "message": "Your work aligns with existing context."
+}
+```
+
+**Conflict Response:**
+
+```json
+{
+  "verdict": "conflict",
+  "confidence": 0.9,
+  "related_contexts": [...],
+  "potential_conflicts": [
+    {
+      "context": {
+        "id": "ctx-abc123",
+        "file_path": "auth/handler.go",
+        "content": "JWT-based stateless authentication",
+        "similarity": 0.89
+      },
+      "reason": "Conflicting authentication approach",
+      "severity": "high"
+    }
+  ],
+  "suggestions": [
+    "Review the related contexts before proceeding",
+    "Consider discussing with the team if this changes existing decisions",
+    "Share context after completing work to inform other agents"
+  ],
+  "message": "Potential conflict detected with 1 existing context(s)"
+}
+```
+
+**Verdict Types:**
+
+| Verdict | Description |
+|---------|-------------|
+| `cohesive` | Work aligns with existing context |
+| `conflict` | Potential conflict detected |
+| `uncertain` | Unable to determine alignment |
+
+See [Cohesion Checking](../concepts/cohesion.md) for more details.
 
 ---
 

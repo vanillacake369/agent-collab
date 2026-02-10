@@ -326,6 +326,29 @@ func (c *Client) Shutdown() error {
 	return nil
 }
 
+// CheckCohesion checks if work aligns with existing team context.
+func (c *Client) CheckCohesion(checkType, intention, result string, filesChanged []string) (*CheckCohesionResponse, error) {
+	resp, err := c.post("/cohesion/check", CheckCohesionRequest{
+		Type:         checkType,
+		Intention:    intention,
+		Result:       result,
+		FilesChanged: filesChanged,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var response CheckCohesionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, err
+	}
+	if response.Error != "" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+	return &response, nil
+}
+
 func (c *Client) get(path string) (*http.Response, error) {
 	return c.httpClient.Get("http://unix" + path)
 }
