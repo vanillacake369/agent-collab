@@ -752,55 +752,75 @@ func (a *App) processLockMessages(ctx context.Context) {
 			continue
 		}
 
-		// First, determine the message type
-		var baseMsg LockMessageBase
-		if err := json.Unmarshal(msg.Data, &baseMsg); err != nil {
-			fmt.Printf("Error unmarshaling lock message type: %v\n", err)
+		// Decompress message if needed
+		data, err := libp2p.DecompressMessage(msg.Data)
+		if err != nil {
+			// Try raw data for backward compatibility
+			data = msg.Data
+		}
+
+		// Handle batch or single message
+		messages, err := libp2p.UnbatchMessage(data)
+		if err != nil {
+			fmt.Printf("Error unbatching lock message: %v\n", err)
 			continue
 		}
 
-		switch baseMsg.Type {
-		case "lock_intent":
-			var intentMsg IntentMessageWrapper
-			if err := json.Unmarshal(msg.Data, &intentMsg); err != nil {
-				fmt.Printf("Error unmarshaling lock intent: %v\n", err)
-				continue
-			}
-			if intentMsg.Intent == nil {
-				fmt.Printf("Received lock_intent with nil intent\n")
-				continue
-			}
-			if err := a.lockService.HandleRemoteLockIntent(intentMsg.Intent); err != nil {
-				fmt.Printf("Error handling lock intent: %v\n", err)
-			}
-
-		case "lock_acquired":
-			var acquireMsg AcquireMessageWrapper
-			if err := json.Unmarshal(msg.Data, &acquireMsg); err != nil {
-				fmt.Printf("Error unmarshaling acquired lock: %v\n", err)
-				continue
-			}
-			if acquireMsg.Lock == nil {
-				fmt.Printf("Received lock_acquired with nil lock\n")
-				continue
-			}
-			if err := a.lockService.HandleRemoteLockAcquired(acquireMsg.Lock); err != nil {
-				fmt.Printf("Error handling lock acquired: %v\n", err)
-			}
-
-		case "lock_released":
-			var releaseMsg ReleaseMessageWrapper
-			if err := json.Unmarshal(msg.Data, &releaseMsg); err != nil {
-				fmt.Printf("Error unmarshaling lock release: %v\n", err)
-				continue
-			}
-			if err := a.lockService.HandleRemoteLockReleased(releaseMsg.LockID); err != nil {
-				fmt.Printf("Error handling lock released: %v\n", err)
-			}
-
-		default:
-			fmt.Printf("Unknown lock message type: %s\n", baseMsg.Type)
+		for _, msgData := range messages {
+			a.handleSingleLockMessage(msgData)
 		}
+	}
+}
+
+// handleSingleLockMessage processes a single lock message
+func (a *App) handleSingleLockMessage(data []byte) {
+	var baseMsg LockMessageBase
+	if err := json.Unmarshal(data, &baseMsg); err != nil {
+		fmt.Printf("Error unmarshaling lock message type: %v\n", err)
+		return
+	}
+
+	switch baseMsg.Type {
+	case "lock_intent":
+		var intentMsg IntentMessageWrapper
+		if err := json.Unmarshal(data, &intentMsg); err != nil {
+			fmt.Printf("Error unmarshaling lock intent: %v\n", err)
+			return
+		}
+		if intentMsg.Intent == nil {
+			fmt.Printf("Received lock_intent with nil intent\n")
+			return
+		}
+		if err := a.lockService.HandleRemoteLockIntent(intentMsg.Intent); err != nil {
+			fmt.Printf("Error handling lock intent: %v\n", err)
+		}
+
+	case "lock_acquired":
+		var acquireMsg AcquireMessageWrapper
+		if err := json.Unmarshal(data, &acquireMsg); err != nil {
+			fmt.Printf("Error unmarshaling acquired lock: %v\n", err)
+			return
+		}
+		if acquireMsg.Lock == nil {
+			fmt.Printf("Received lock_acquired with nil lock\n")
+			return
+		}
+		if err := a.lockService.HandleRemoteLockAcquired(acquireMsg.Lock); err != nil {
+			fmt.Printf("Error handling lock acquired: %v\n", err)
+		}
+
+	case "lock_released":
+		var releaseMsg ReleaseMessageWrapper
+		if err := json.Unmarshal(data, &releaseMsg); err != nil {
+			fmt.Printf("Error unmarshaling lock release: %v\n", err)
+			return
+		}
+		if err := a.lockService.HandleRemoteLockReleased(releaseMsg.LockID); err != nil {
+			fmt.Printf("Error handling lock released: %v\n", err)
+		}
+
+	default:
+		fmt.Printf("Unknown lock message type: %s\n", baseMsg.Type)
 	}
 }
 
@@ -833,38 +853,58 @@ func (a *App) processContextMessages(ctx context.Context) {
 			continue
 		}
 
-		// Determine message type
-		var baseMsg ContextMessageBase
-		if err := json.Unmarshal(msg.Data, &baseMsg); err != nil {
-			fmt.Printf("Error unmarshaling context message type: %v\n", err)
+		// Decompress message if needed
+		data, err := libp2p.DecompressMessage(msg.Data)
+		if err != nil {
+			// Try raw data for backward compatibility
+			data = msg.Data
+		}
+
+		// Handle batch or single message
+		messages, err := libp2p.UnbatchMessage(data)
+		if err != nil {
+			fmt.Printf("Error unbatching context message: %v\n", err)
 			continue
 		}
 
-		switch baseMsg.Type {
-		case "shared_context":
-			// Handle shared context from peers
-			var ctxMsg ContextMessage
-			if err := json.Unmarshal(msg.Data, &ctxMsg); err != nil {
-				fmt.Printf("Error unmarshaling shared context: %v\n", err)
-				continue
-			}
-			a.handleSharedContext(ctx, &ctxMsg)
-
-		default:
-			// Assume it's a Delta message (for backward compatibility)
-			var delta ctxsync.Delta
-			if err := json.Unmarshal(msg.Data, &delta); err != nil {
-				fmt.Printf("Error unmarshaling delta: %v\n", err)
-				continue
-			}
-
-			if err := a.syncManager.ReceiveDelta(&delta); err != nil {
-				fmt.Printf("Error handling delta: %v\n", err)
-			}
-
-			// Also store in VectorDB if it's a file change with content
-			a.storeDeltaInVectorDB(ctx, &delta)
+		for _, msgData := range messages {
+			a.handleSingleContextMessage(ctx, msgData)
 		}
+	}
+}
+
+// handleSingleContextMessage processes a single context message
+func (a *App) handleSingleContextMessage(ctx context.Context, data []byte) {
+	var baseMsg ContextMessageBase
+	if err := json.Unmarshal(data, &baseMsg); err != nil {
+		fmt.Printf("Error unmarshaling context message type: %v\n", err)
+		return
+	}
+
+	switch baseMsg.Type {
+	case "shared_context":
+		// Handle shared context from peers
+		var ctxMsg ContextMessage
+		if err := json.Unmarshal(data, &ctxMsg); err != nil {
+			fmt.Printf("Error unmarshaling shared context: %v\n", err)
+			return
+		}
+		a.handleSharedContext(ctx, &ctxMsg)
+
+	default:
+		// Assume it's a Delta message (for backward compatibility)
+		var delta ctxsync.Delta
+		if err := json.Unmarshal(data, &delta); err != nil {
+			fmt.Printf("Error unmarshaling delta: %v\n", err)
+			return
+		}
+
+		if err := a.syncManager.ReceiveDelta(&delta); err != nil {
+			fmt.Printf("Error handling delta: %v\n", err)
+		}
+
+		// Also store in VectorDB if it's a file change with content
+		a.storeDeltaInVectorDB(ctx, &delta)
 	}
 }
 
