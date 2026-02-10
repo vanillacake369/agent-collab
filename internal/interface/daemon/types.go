@@ -124,3 +124,31 @@ type JoinResponse struct {
 	ConnectedPeers int    `json:"connected_peers"`
 	Error          string `json:"error,omitempty"`
 }
+
+// PeerInfo contains information about a connected peer.
+type PeerInfo struct {
+	ID        string   `json:"id"`
+	Addresses []string `json:"addresses"`
+	Latency   int64    `json:"latency_ms"`
+	Connected bool     `json:"connected"`
+}
+
+// ListPeersResponse contains the list of connected peers.
+type ListPeersResponse struct {
+	Peers []PeerInfo `json:"peers"`
+}
+
+// ShareContextRequest is a request to share context with peers.
+type ShareContextRequest struct {
+	FilePath string         `json:"file_path"`
+	Content  string         `json:"content"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+}
+
+// ShareContextResponse is the response after sharing context.
+type ShareContextResponse struct {
+	Success    bool   `json:"success"`
+	DocumentID string `json:"document_id,omitempty"`
+	Message    string `json:"message,omitempty"`
+	Error      string `json:"error,omitempty"`
+}

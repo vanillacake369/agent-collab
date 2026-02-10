@@ -430,6 +430,11 @@ func (n *Node) PeerInfo(id peer.ID) peer.AddrInfo {
 	return n.host.Peerstore().PeerInfo(id)
 }
 
+// Latency는 peer의 지연 시간을 반환합니다.
+func (n *Node) Latency(id peer.ID) time.Duration {
+	return n.host.Peerstore().LatencyEWMA(id)
+}
+
 // Close는 노드를 종료합니다.
 func (n *Node) Close() error {
 	// Phase 1: Stop batcher first to flush pending messages
