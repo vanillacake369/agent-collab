@@ -62,31 +62,30 @@ func init() {
 	daemonStartCmd.Flags().BoolVarP(&daemonForeground, "foreground", "f", false, "포그라운드에서 실행")
 }
 
-func runDaemonStart(cmd *cobra.Command, args []string) error {
+// ensureDaemonRunning checks if daemon is running and starts it if not.
+// This is used by commands that require a running daemon.
+func ensureDaemonRunning() error {
 	client := daemon.NewClient()
 
-	// Check if already running
 	if client.IsRunning() {
-		status, _ := client.Status()
-		fmt.Println("✓ 데몬이 이미 실행 중입니다.")
-		if status != nil {
-			fmt.Printf("  PID: %d\n", status.PID)
-			fmt.Printf("  Project: %s\n", status.ProjectName)
-		}
 		return nil
 	}
 
-	if daemonForeground {
-		return runDaemonRun(cmd, args)
-	}
+	fmt.Println("📡 데몬이 실행 중이 아닙니다. 자동으로 시작합니다...")
+	fmt.Println()
 
-	// Start daemon in background
+	return startDaemonBackground()
+}
+
+// startDaemonBackground starts the daemon in background mode.
+func startDaemonBackground() error {
+	client := daemon.NewClient()
+
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("실행 파일 경로를 찾을 수 없습니다: %w", err)
 	}
 
-	// Validate executable path to prevent command injection
 	// #nosec G204 - executable is from os.Executable(), not user input
 	daemonProcess := exec.Command(executable, "daemon", "run")
 	daemonProcess.Stdout = nil
@@ -112,6 +111,27 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 	}
 
 	return fmt.Errorf("데몬 시작 시간 초과")
+}
+
+func runDaemonStart(cmd *cobra.Command, args []string) error {
+	client := daemon.NewClient()
+
+	// Check if already running
+	if client.IsRunning() {
+		status, _ := client.Status()
+		fmt.Println("✓ 데몬이 이미 실행 중입니다.")
+		if status != nil {
+			fmt.Printf("  PID: %d\n", status.PID)
+			fmt.Printf("  Project: %s\n", status.ProjectName)
+		}
+		return nil
+	}
+
+	if daemonForeground {
+		return runDaemonRun(cmd, args)
+	}
+
+	return startDaemonBackground()
 }
 
 func runDaemonStop(cmd *cobra.Command, args []string) error {

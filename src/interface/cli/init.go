@@ -3,8 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -56,6 +54,13 @@ func init() {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
+	// 포그라운드 모드가 아니면 데몬 상태 확인 및 자동 시작
+	if !initForeground {
+		if err := ensureDaemonRunning(); err != nil {
+			return err
+		}
+	}
+
 	// WireGuard 지원 여부 확인
 	if enableWireGuard {
 		supported, suggestion := platform.CheckAndSuggestInstall()
@@ -151,52 +156,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return runDaemonRun(cmd, args)
 	}
 
-	// 백그라운드 데몬 시작
-	return startDaemonAfterInit()
-}
-
-// startDaemonAfterInit starts the daemon in background after initialization.
-func startDaemonAfterInit() error {
+	// 데몬이 이미 실행 중이면 안내 메시지만 출력
 	client := daemon.NewClient()
-
-	// Check if already running
 	if client.IsRunning() {
 		fmt.Println("✓ 데몬이 이미 실행 중입니다.")
-		return nil
+		fmt.Println()
+		fmt.Println("상태 확인: agent-collab daemon status")
+		fmt.Println("데몬 중지: agent-collab daemon stop")
 	}
 
-	// Start daemon in background
-	executable, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("실행 파일 경로를 찾을 수 없습니다: %w", err)
-	}
-
-	// #nosec G204 - executable is from os.Executable(), not user input
-	daemonProcess := exec.Command(executable, "daemon", "run")
-	daemonProcess.Stdout = nil
-	daemonProcess.Stderr = nil
-	daemonProcess.Stdin = nil
-
-	// Detach from parent process (platform-specific)
-	setSysProcAttr(daemonProcess)
-
-	if err := daemonProcess.Start(); err != nil {
-		return fmt.Errorf("데몬 시작 실패: %w", err)
-	}
-
-	fmt.Printf("🚀 백그라운드 데몬 시작 중... (PID: %d)\n", daemonProcess.Process.Pid)
-
-	// Wait for daemon to be ready
-	for i := 0; i < 30; i++ {
-		time.Sleep(100 * time.Millisecond)
-		if client.IsRunning() {
-			fmt.Println("✓ 데몬이 시작되었습니다.")
-			fmt.Println()
-			fmt.Println("상태 확인: agent-collab daemon status")
-			fmt.Println("데몬 중지: agent-collab daemon stop")
-			return nil
-		}
-	}
-
-	return fmt.Errorf("데몬 시작 시간 초과")
+	return nil
 }
