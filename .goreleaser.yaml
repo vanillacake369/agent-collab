@@ -13,7 +13,7 @@ before:
 
 builds:
   - id: agent-collab
-    main: ./cmd/agent-collab
+    main: ./src
     binary: agent-collab
     env:
       - CGO_ENABLED=0

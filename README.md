@@ -1,300 +1,254 @@
-# agent-collab
+<p align="center">
+  <img src="https://img.shields.io/github/v/release/vanillacake369/agent-collab?style=flat-square" alt="Release">
+  <img src="https://img.shields.io/github/license/vanillacake369/agent-collab?style=flat-square" alt="License">
+  <img src="https://img.shields.io/github/actions/workflow/status/vanillacake369/agent-collab/ci.yml?branch=main&style=flat-square" alt="CI">
+  <img src="https://img.shields.io/github/go-mod/go-version/vanillacake369/agent-collab?style=flat-square" alt="Go Version">
+</p>
 
-A P2P-based distributed collaboration system for AI agents. Enable your local AI agents to share context and coordinate work across a team without a central server.
+<h1 align="center">agent-collab</h1>
 
-## Features
+<p align="center">
+  <b>P2P distributed collaboration for AI agents</b><br>
+  Share context and coordinate work across your team without a central server.
+</p>
 
-- **P2P Architecture**: No central server required - agents communicate directly via libp2p
-- **Multi-Model Support**: Works with OpenAI, Anthropic, Google, Ollama, and custom providers
-- **Semantic Locking**: Prevent conflicts before they happen with intention-based locks on code regions
-- **Context Synchronization**: Share and sync context across all connected agents
-- **MCP Server**: Connect external agents (Claude Code, Gemini CLI, etc.) via Model Context Protocol
-- **Token Tracking**: Monitor API token usage with detailed breakdowns
-- **Vector Embeddings**: Store and query semantic embeddings locally
+---
+
+## Why agent-collab?
+
+When multiple AI agents work on the same codebase, conflicts happen. `agent-collab` solves this with:
+
+- **No Server Required** — Direct P2P communication via libp2p
+- **Semantic Locks** — Prevent conflicts before they happen with intention-based locking
+- **Context Sharing** — Keep all agents in sync with CRDT-based synchronization
+- **MCP Integration** — Connect Claude Code, Gemini CLI, or any MCP-compatible agent
 
 ## Installation
 
+### Homebrew (macOS/Linux)
+
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/agent-collab.git
-cd agent-collab
-
-# Build
-go build -o agent-collab ./cmd/agent-collab
-
-# Or install directly
-go install ./cmd/agent-collab
+brew install vanillacake369/tap/agent-collab
 ```
+
+### APT (Debian/Ubuntu)
+
+```bash
+curl -fsSL https://vanillacake369.github.io/agent-collab/gpg.key | \
+  sudo gpg --dearmor -o /usr/share/keyrings/agent-collab.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/agent-collab.gpg] \
+  https://vanillacake369.github.io/agent-collab stable main" | \
+  sudo tee /etc/apt/sources.list.d/agent-collab.list
+
+sudo apt update && sudo apt install agent-collab
+```
+
+### Go Install
+
+```bash
+go install github.com/vanillacake369/agent-collab/src@latest
+```
+
+### Docker
+
+```bash
+docker pull ghcr.io/vanillacake369/agent-collab:latest
+```
+
+<details>
+<summary><b>Other installation methods</b></summary>
+
+### RPM (Fedora/RHEL)
+
+```bash
+curl -fsSL https://github.com/vanillacake369/agent-collab/releases/latest/download/agent-collab_linux_amd64.rpm -o agent-collab.rpm
+sudo rpm -i agent-collab.rpm
+```
+
+### Binary Download
+
+Download from [Releases](https://github.com/vanillacake369/agent-collab/releases):
+- `agent-collab_vX.Y.Z_darwin_arm64.tar.gz` — macOS Apple Silicon
+- `agent-collab_vX.Y.Z_darwin_amd64.tar.gz` — macOS Intel
+- `agent-collab_vX.Y.Z_linux_amd64.tar.gz` — Linux x86_64
+- `agent-collab_vX.Y.Z_linux_arm64.tar.gz` — Linux ARM64
+- `agent-collab_vX.Y.Z_windows_amd64.zip` — Windows
+
+### Build from Source
+
+```bash
+git clone https://github.com/vanillacake369/agent-collab.git
+cd agent-collab
+go build -o agent-collab ./src
+```
+
+</details>
 
 ## Quick Start
 
-### Initialize a New Cluster
+### 1. Start the Daemon
 
 ```bash
-# Create a new cluster for your project
-agent-collab init my-project
-
-# This outputs an invite token to share with teammates
-```
-
-### Join an Existing Cluster
-
-```bash
-# Join using the invite token from the cluster creator
-agent-collab join <invite-token>
-```
-
-### Check Cluster Status
-
-```bash
-# View cluster status, connected peers, and active locks
-agent-collab status
-```
-
-## Commands
-
-### Cluster Management
-
-| Command | Description |
-|---------|-------------|
-| `agent-collab init <project>` | Initialize a new cluster |
-| `agent-collab join <token>` | Join an existing cluster |
-| `agent-collab leave [--force] [--clean]` | Leave the current cluster |
-| `agent-collab status` | Show cluster status |
-
-### Lock Management
-
-| Command | Description |
-|---------|-------------|
-| `agent-collab lock list` | List all active locks |
-| `agent-collab lock release <lock-id>` | Release a specific lock |
-| `agent-collab lock history` | Show recent lock history |
-
-### Agent Management
-
-| Command | Description |
-|---------|-------------|
-| `agent-collab agents list` | List connected AI agents |
-| `agent-collab agents info <agent-id>` | Show agent details |
-| `agent-collab agents providers` | List supported AI providers |
-
-### Peer Management
-
-| Command | Description |
-|---------|-------------|
-| `agent-collab peers list` | List connected peers |
-| `agent-collab peers info <peer-id>` | Show peer details |
-
-### Daemon Management
-
-| Command | Description |
-|---------|-------------|
-| `agent-collab daemon start` | Start the background daemon |
-| `agent-collab daemon stop` | Stop the background daemon |
-| `agent-collab daemon status` | Show daemon status |
-| `agent-collab daemon start -f` | Run daemon in foreground |
-
-### MCP Server
-
-| Command | Description |
-|---------|-------------|
-| `agent-collab mcp serve` | Start MCP server (connects to daemon if running) |
-| `agent-collab mcp serve --standalone` | Start MCP server in standalone mode |
-| `agent-collab mcp info` | Show MCP server info |
-
-### Token Management
-
-| Command | Description |
-|---------|-------------|
-| `agent-collab token show` | Display current invite token |
-| `agent-collab token refresh` | Generate a new invite token |
-| `agent-collab token usage [--period day\|week\|month] [--json]` | Show token usage statistics |
-
-### Configuration
-
-| Command | Description |
-|---------|-------------|
-| `agent-collab config show` | Display current configuration |
-| `agent-collab config set <key> <value>` | Set a configuration value |
-| `agent-collab config reset --force` | Reset to default configuration |
-
-## Configuration Options
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `network.listen_port` | 4001 | Port for P2P connections |
-| `lock.default_ttl` | 30s | Default lock time-to-live |
-| `lock.heartbeat_interval` | 10s | Lock heartbeat interval |
-| `context.sync_interval` | 5s | Context synchronization interval |
-| `token.daily_limit` | 200000 | Daily API token limit |
-| `embedding.provider` | (auto) | Embedding provider (openai, anthropic, google, ollama, mock) |
-| `embedding.model` | (provider default) | Embedding model to use |
-| `ui.theme` | dark | UI theme (dark/light) |
-
-## Multi-Model Support
-
-agent-collab auto-detects available AI providers based on environment variables:
-
-### OpenAI
-```bash
-export OPENAI_API_KEY=sk-...
-# Uses text-embedding-3-small by default
-```
-
-### Anthropic (via Voyage AI)
-```bash
-export ANTHROPIC_API_KEY=ant-...
-# Uses voyage-2 embedding model
-```
-
-### Google AI
-```bash
-export GOOGLE_API_KEY=...
-# Uses text-embedding-004 by default
-```
-
-### Ollama (Local)
-```bash
-# No API key needed, just run Ollama locally
-ollama run nomic-embed-text
-# agent-collab will auto-detect at localhost:11434
-```
-
-### Manual Configuration
-```bash
-# Override auto-detection
-agent-collab config set embedding.provider openai
-agent-collab config set embedding.model text-embedding-3-large
-```
-
-## Daemon Mode
-
-The daemon allows multiple AI agents (Claude sessions, Gemini CLI, etc.) to share the same cluster connection:
-
-```bash
-# Start the daemon
 agent-collab daemon start
-
-# Check status
-agent-collab daemon status
-
-# Stop when done
-agent-collab daemon stop
 ```
 
-When the daemon is running, all MCP clients automatically connect to it, sharing:
-- Cluster connection and peer discovery
-- Lock state and coordination
-- Embedding service
-- Vector store
-- Real-time events via lightweight IPC (events.sock)
+### 2. Create a Cluster
 
-## MCP Integration
-
-Connect external AI agents via Model Context Protocol:
-
-### Claude Desktop
-Add to `claude_desktop_config.json`:
-```json
-{
-  "mcpServers": {
-    "agent-collab": {
-      "command": "agent-collab",
-      "args": ["mcp", "serve"]
-    }
-  }
-}
+```bash
+agent-collab init my-project
+# Outputs an invite token for teammates
 ```
 
-### Claude Code
+### 3. Connect Claude Code
+
 ```bash
 claude mcp add agent-collab -- agent-collab mcp serve
 ```
 
-### Recommended Setup
+That's it! Your AI agents can now share context and coordinate locks.
 
-For the best experience, start the daemon before using Claude:
+<details>
+<summary><b>Join an existing cluster</b></summary>
 
 ```bash
-# 1. Start daemon (once)
-agent-collab daemon start
-
-# 2. Use Claude Code normally - it will auto-connect to the daemon
-claude
-
-# The MCP server will detect the running daemon and share the cluster connection
+# Get the invite token from the cluster creator
+agent-collab join <invite-token>
 ```
 
-### Available MCP Tools
-- `acquire_lock` - Acquire a semantic lock on a code region
-- `release_lock` - Release a previously acquired lock
-- `list_locks` - List all active locks
-- `share_context` - Share context with other agents
-- `embed_text` - Generate embeddings for text
-- `search_similar` - Search for similar content
-- `cluster_status` - Get cluster status
-- `list_agents` - List connected agents
-- `get_events` - Get recent cluster events (lock changes, agent joins, etc.)
-- `get_warnings` - Get pending warnings about events that may affect your work
+</details>
 
-## Architecture
+## How It Works
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Developer Machine A                       │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐      │
-│  │ Claude Code │───▶│ agent-collab │◀──▶│ Vector DB   │      │
-│  │   (MCP)     │    └──────┬──────┘    └─────────────┘      │
-│  └─────────────┘           │                                  │
-└────────────────────────────┼─────────────────────────────────┘
-                              │ libp2p / Gossipsub
-┌────────────────────────────┼─────────────────────────────────┐
-│                     Developer Machine B                       │
-│  ┌─────────────┐    ┌──────┴──────┐    ┌─────────────┐      │
-│  │ Gemini CLI  │───▶│ agent-collab │◀──▶│ Vector DB   │      │
-│  │   (MCP)     │    └─────────────┘    └─────────────┘      │
-│  └─────────────┘                                              │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                  Developer Machine A                     │
+│  ┌─────────────┐    ┌──────────────┐    ┌───────────┐  │
+│  │ Claude Code │───▶│ agent-collab │◀──▶│ Vector DB │  │
+│  │   (MCP)     │    └──────┬───────┘    └───────────┘  │
+│  └─────────────┘           │                            │
+└────────────────────────────┼────────────────────────────┘
+                             │ P2P (libp2p + GossipSub)
+┌────────────────────────────┼────────────────────────────┐
+│                  Developer Machine B                     │
+│  ┌─────────────┐    ┌──────┴───────┐    ┌───────────┐  │
+│  │ Gemini CLI  │───▶│ agent-collab │◀──▶│ Vector DB │  │
+│  │   (MCP)     │    └──────────────┘    └───────────┘  │
+│  └─────────────┘                                        │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### Core Components
+**Semantic Locks** prevent conflicts by tracking *intent*. Before editing `auth/handler.go`, an agent acquires a lock explaining what it plans to do. Other agents see this and work elsewhere.
 
-- **Agent Registry**: Manages connected AI agents with capabilities tracking
-- **Embedding Service**: Multi-provider embedding generation (OpenAI, Anthropic, Google, Ollama)
-- **Semantic Lock Service**: Manages locks on code regions with negotiation support
-- **Context Sync Manager**: CRDT-based context synchronization across peers
-- **MCP Server**: Model Context Protocol server for external agent integration
-- **Token Tracker**: Tracks API token usage with persistence
-- **Vector Store**: Local vector storage for embeddings
-- **libp2p Node**: P2P networking with Kademlia DHT and Gossipsub
+**Context Sync** uses CRDTs to share knowledge across the cluster. When one agent learns something about the codebase, all agents benefit.
+
+## MCP Tools
+
+Once connected, your AI agent has access to:
+
+| Tool | Description |
+|------|-------------|
+| `acquire_lock` | Lock a code region before editing |
+| `release_lock` | Release a lock when done |
+| `list_locks` | See what other agents are working on |
+| `share_context` | Share knowledge with other agents |
+| `search_similar` | Find related context via semantic search |
+| `get_warnings` | Get alerts about conflicts or relevant changes |
+| `cluster_status` | View cluster health and connected peers |
+
+## Commands
+
+### Cluster
+
+```bash
+agent-collab init <project>     # Create a new cluster
+agent-collab join <token>       # Join an existing cluster
+agent-collab leave              # Leave the cluster
+agent-collab status             # Show cluster status
+```
+
+### Locks
+
+```bash
+agent-collab lock list          # List active locks
+agent-collab lock release <id>  # Release a lock
+agent-collab lock history       # Recent lock activity
+```
+
+### Daemon
+
+```bash
+agent-collab daemon start       # Start background daemon
+agent-collab daemon stop        # Stop daemon
+agent-collab daemon status      # Check daemon status
+```
+
+### Token & Config
+
+```bash
+agent-collab token show         # Show invite token
+agent-collab token usage        # API token usage stats
+agent-collab config show        # Current configuration
+agent-collab config set <k> <v> # Set config value
+```
+
+<details>
+<summary><b>All configuration options</b></summary>
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `network.listen_port` | 4001 | P2P listening port |
+| `lock.default_ttl` | 30s | Lock time-to-live |
+| `lock.heartbeat_interval` | 10s | Lock heartbeat interval |
+| `context.sync_interval` | 5s | Context sync frequency |
+| `token.daily_limit` | 200000 | Daily API token limit |
+| `embedding.provider` | auto | Embedding provider |
+| `embedding.model` | provider default | Embedding model |
+| `ui.theme` | dark | UI theme |
+
+</details>
+
+## Multi-Provider Support
+
+agent-collab auto-detects available AI providers:
+
+| Provider | Environment Variable | Default Model |
+|----------|---------------------|---------------|
+| OpenAI | `OPENAI_API_KEY` | text-embedding-3-small |
+| Anthropic | `ANTHROPIC_API_KEY` | voyage-2 |
+| Google AI | `GOOGLE_API_KEY` | text-embedding-004 |
+| Ollama | (auto-detect) | nomic-embed-text |
+
+```bash
+# Manual override
+agent-collab config set embedding.provider openai
+agent-collab config set embedding.model text-embedding-3-large
+```
 
 ## Data Directory
 
-agent-collab stores data in `~/.agent-collab/`:
-
 ```
 ~/.agent-collab/
-├── key.json        # Node identity keys
-├── vectors/        # Vector embeddings
-├── metrics/        # Usage metrics
-├── daemon.sock     # Unix socket for daemon HTTP API (when running)
-├── daemon.pid      # Daemon process ID file (when running)
-└── events.sock     # Unix socket for real-time event streaming (when running)
+├── key.json        # Node identity
+├── vectors/        # Embeddings
+├── metrics/        # Usage stats
+├── daemon.sock     # Daemon API socket
+├── daemon.pid      # Daemon PID
+└── events.sock     # Event stream socket
 ```
 
-## Development
+## Contributing
+
+Contributions are welcome! See the [contribution guidelines](CONTRIBUTING.md) for details.
 
 ```bash
 # Run tests
-go test ./...
+go test ./src/...
 
-# Build with verbose output
-go build -v ./cmd/agent-collab
-
-# Run with debug logging
-agent-collab --verbose status
+# Build
+go build ./src
 ```
 
 ## License
 
-MIT License
+MIT License — see [LICENSE](LICENSE) for details.
