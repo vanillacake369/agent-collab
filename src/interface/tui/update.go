@@ -533,21 +533,42 @@ func (m Model) fetchAllData() tea.Cmd {
 // fetchMetrics는 메트릭을 가져옵니다.
 func (m Model) fetchMetrics() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 메트릭 가져오기 (daemon 연동)
-		return MetricsMsg{
-			CPUUsage:    0,
-			MemUsage:    0,
-			NetUpload:   0,
-			NetDownload: 0,
-			TokensRate:  0,
+		client := m.getClient()
+		if !client.IsRunning() {
+			return MetricsMsg{}
 		}
+
+		metrics, err := client.Metrics()
+		if err != nil {
+			return MetricsMsg{}
+		}
+
+		// Extract metrics from map
+		msg := MetricsMsg{}
+		if v, ok := metrics["cpu_usage"].(float64); ok {
+			msg.CPUUsage = v
+		}
+		if v, ok := metrics["mem_usage"].(float64); ok {
+			msg.MemUsage = int64(v)
+		}
+		if v, ok := metrics["bytes_sent"].(float64); ok {
+			msg.NetUpload = int64(v)
+		}
+		if v, ok := metrics["bytes_received"].(float64); ok {
+			msg.NetDownload = int64(v)
+		}
+		if v, ok := metrics["tokens_per_hour"].(float64); ok {
+			msg.TokensRate = int64(v)
+		}
+
+		return msg
 	}
 }
 
 // fetchStatus는 데몬 상태를 가져옵니다.
 func (m Model) fetchStatus() tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.NewClient()
+		client := m.getClient()
 		if !client.IsRunning() {
 			return InitialDataMsg{
 				ProjectName: "(데몬 미실행)",
@@ -579,7 +600,7 @@ func (m Model) fetchStatus() tea.Cmd {
 // fetchPeers는 peer 목록을 가져옵니다.
 func (m Model) fetchPeers() tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.NewClient()
+		client := m.getClient()
 		if !client.IsRunning() {
 			return PeersMsg{Peers: []PeerInfo{}}
 		}
@@ -595,9 +616,13 @@ func (m Model) fetchPeers() tea.Cmd {
 			if len(p.Addresses) > 0 {
 				addr = p.Addresses[0]
 			}
+			name := p.ID
+			if len(p.ID) > 12 {
+				name = p.ID[:12] + "..."
+			}
 			peers[i] = PeerInfo{
 				ID:        p.ID,
-				Name:      p.ID[:12] + "...", // Short ID as name
+				Name:      name,
 				Status:    "connected",
 				Latency:   int(p.Latency),
 				Transport: addr,
@@ -611,7 +636,7 @@ func (m Model) fetchPeers() tea.Cmd {
 // fetchLocks는 락 목록을 가져옵니다.
 func (m Model) fetchLocks() tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.NewClient()
+		client := m.getClient()
 		if !client.IsRunning() {
 			return LocksMsg{Locks: []LockInfo{}}
 		}
@@ -643,10 +668,19 @@ func (m Model) fetchLocks() tea.Cmd {
 // fetchContext는 컨텍스트 상태를 가져옵니다.
 func (m Model) fetchContext() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 컨텍스트 가져오기 (daemon 연동)
+		client := m.getClient()
+		if !client.IsRunning() {
+			return ContextMsg{SyncProgress: map[string]float64{}}
+		}
+
+		stats, err := client.ContextStats()
+		if err != nil {
+			return ContextMsg{SyncProgress: map[string]float64{}}
+		}
+
 		return ContextMsg{
-			TotalEmbeddings: 0,
-			DatabaseSize:    0,
+			TotalEmbeddings: int(stats.TotalEmbeddings),
+			DatabaseSize:    0, // Not provided by API yet
 			SyncProgress:    map[string]float64{},
 		}
 	}
@@ -655,17 +689,34 @@ func (m Model) fetchContext() tea.Cmd {
 // fetchTokens는 토큰 사용량을 가져옵니다.
 func (m Model) fetchTokens() tea.Cmd {
 	return func() tea.Msg {
-		// TODO: 실제 토큰 사용량 가져오기 (daemon 연동)
+		client := m.getClient()
+		if !client.IsRunning() {
+			return TokensMsg{
+				DailyLimit: 200000,
+				Breakdown:  []TokenBreakdown{},
+				HourlyData: []float64{},
+			}
+		}
+
+		usage, err := client.TokenUsage()
+		if err != nil {
+			return TokensMsg{
+				DailyLimit: 200000,
+				Breakdown:  []TokenBreakdown{},
+				HourlyData: []float64{},
+			}
+		}
+
 		return TokensMsg{
-			TodayUsed:   0,
-			DailyLimit:  200000, // 기본 한도
-			Breakdown:   []TokenBreakdown{},
-			HourlyData:  []float64{},
-			CostToday:   0,
-			CostWeek:    0,
-			CostMonth:   0,
-			TokensWeek:  0,
-			TokensMonth: 0,
+			TodayUsed:   usage.TokensToday,
+			DailyLimit:  usage.DailyLimit,
+			Breakdown:   []TokenBreakdown{}, // Not provided by API yet
+			HourlyData:  []float64{},        // Not provided by API yet
+			CostToday:   usage.CostToday,
+			CostWeek:    usage.CostWeek,
+			CostMonth:   usage.CostMonth,
+			TokensWeek:  usage.TokensWeek,
+			TokensMonth: usage.TokensMonth,
 		}
 	}
 }
