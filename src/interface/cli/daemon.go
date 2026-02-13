@@ -119,12 +119,28 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 	// Check if already running
 	if client.IsRunning() {
 		status, _ := client.Status()
-		fmt.Println("✓ 데몬이 이미 실행 중입니다.")
-		if status != nil {
+		if status != nil && status.ProjectName != "" {
+			// Daemon is running with a valid project
+			fmt.Println("✓ 데몬이 이미 실행 중입니다.")
 			fmt.Printf("  PID: %d\n", status.PID)
 			fmt.Printf("  Project: %s\n", status.ProjectName)
+			return nil
 		}
-		return nil
+		// Daemon is running but has no project - restart it
+		fmt.Println("⚠ 데몬이 실행 중이지만 프로젝트가 설정되지 않았습니다. 재시작합니다...")
+		if err := client.Shutdown(); err != nil {
+			// Force kill if shutdown fails
+			if pid, err := client.GetPID(); err == nil {
+				signalTerm(pid)
+			}
+		}
+		// Wait for daemon to stop
+		for i := 0; i < 30; i++ {
+			time.Sleep(100 * time.Millisecond)
+			if !client.IsRunning() {
+				break
+			}
+		}
 	}
 
 	if daemonForeground {
@@ -209,10 +225,12 @@ func runDaemonRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("앱 생성 실패: %w", err)
 	}
 
-	// Load existing configuration
+	// Try to load existing configuration (it's OK if it doesn't exist yet)
 	ctx := context.Background()
 	if err := app.LoadFromConfig(ctx); err != nil {
-		return fmt.Errorf("설정 로드 실패: %w", err)
+		// Config doesn't exist - daemon starts without a cluster
+		// init/join commands will trigger through daemon API
+		fmt.Fprintf(os.Stderr, "No existing config found, daemon starting without cluster\n")
 	}
 
 	// Create and start daemon server

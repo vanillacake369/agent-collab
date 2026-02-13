@@ -54,12 +54,8 @@ func init() {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	// 포그라운드 모드가 아니면 데몬 상태 확인 및 자동 시작
-	if !initForeground {
-		if err := ensureDaemonRunning(); err != nil {
-			return err
-		}
-	}
+	// init은 데몬 없이 직접 초기화를 수행합니다.
+	// 초기화 후 config.json이 생성되면 데몬을 시작합니다.
 
 	// WireGuard 지원 여부 확인
 	if enableWireGuard {
@@ -156,14 +152,35 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return runDaemonRun(cmd, args)
 	}
 
-	// 데몬이 이미 실행 중이면 안내 메시지만 출력
+	// 초기화 완료 후 데몬 시작/재시작
 	client := daemon.NewClient()
 	if client.IsRunning() {
-		fmt.Println("✓ 데몬이 이미 실행 중입니다.")
-		fmt.Println()
-		fmt.Println("상태 확인: agent-collab daemon status")
-		fmt.Println("데몬 중지: agent-collab daemon stop")
+		// Daemon is running but doesn't have the new config - restart it
+		fmt.Println("🔄 데몬 재시작 중... (새 설정 로드)")
+		if err := client.Shutdown(); err != nil {
+			// Try to terminate the process
+			if pid, err := client.GetPID(); err == nil {
+				signalTerm(pid)
+			}
+		}
+		// Wait for daemon to stop
+		for i := 0; i < 30; i++ {
+			time.Sleep(100 * time.Millisecond)
+			if !client.IsRunning() {
+				break
+			}
+		}
 	}
+
+	fmt.Println("🚀 데몬 시작 중...")
+	if err := startDaemonBackground(); err != nil {
+		fmt.Printf("⚠ 데몬 시작 실패: %v\n", err)
+		fmt.Println("  수동으로 시작하려면: agent-collab daemon start")
+	}
+
+	fmt.Println()
+	fmt.Println("상태 확인: agent-collab daemon status")
+	fmt.Println("데몬 중지: agent-collab daemon stop")
 
 	return nil
 }

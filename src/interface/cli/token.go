@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -56,23 +57,25 @@ func runTokenShow(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("앱 생성 실패: %w", err)
 	}
 
-	if app.Node() == nil {
+	// Load configuration to initialize the node
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if err := app.LoadFromConfig(ctx); err != nil {
 		fmt.Println("❌ 클러스터가 초기화되지 않았습니다.")
 		fmt.Println("먼저 'agent-collab init' 또는 'agent-collab join'을 실행하세요.")
 		return nil
 	}
+	defer app.Stop()
 
 	tokenStr, err := app.CreateInviteToken()
 	if err != nil {
 		return fmt.Errorf("토큰 생성 실패: %w", err)
 	}
 
-	fmt.Println("현재 초대 토큰:")
-	fmt.Println()
-	fmt.Printf("  %s\n", tokenStr)
-	fmt.Println()
-	fmt.Println("이 토큰을 팀원에게 공유하세요.")
-	fmt.Println("팀원은 'agent-collab join <token>' 명령으로 참여할 수 있습니다.")
+	fmt.Println(tokenStr)
 
 	return nil
 }
@@ -83,10 +86,17 @@ func runTokenRefresh(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("앱 생성 실패: %w", err)
 	}
 
-	if app.Node() == nil {
+	// Load configuration to initialize the node
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if err := app.LoadFromConfig(ctx); err != nil {
 		fmt.Println("❌ 클러스터가 초기화되지 않았습니다.")
 		return nil
 	}
+	defer app.Stop()
 
 	fmt.Println("🔄 토큰 갱신 중...")
 	fmt.Println()

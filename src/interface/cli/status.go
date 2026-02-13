@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"agent-collab/src/application"
+	"agent-collab/src/interface/daemon"
 
 	"github.com/spf13/cobra"
 )
@@ -30,7 +31,33 @@ func init() {
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	// 애플리케이션 생성
+	// Check if daemon is running first
+	client := daemon.NewClient()
+	if client.IsRunning() {
+		daemonStatus, err := client.Status()
+		if err == nil {
+			// Convert daemon status to app status format
+			status := &application.Status{
+				Running:           true,
+				ProjectName:       daemonStatus.ProjectName,
+				NodeID:            daemonStatus.NodeID,
+				PeerCount:         daemonStatus.PeerCount,
+				LockCount:         daemonStatus.LockCount,
+				EmbeddingCount:    0, // Not available from daemon status
+			}
+			if statusWatch {
+				// For watch mode, we need the app
+				app, err := application.New(nil)
+				if err != nil {
+					return fmt.Errorf("앱 생성 실패: %w", err)
+				}
+				return runStatusWatch(app)
+			}
+			return printAppStatus(status)
+		}
+	}
+
+	// Fallback: create app and get status directly
 	app, err := application.New(nil)
 	if err != nil {
 		return fmt.Errorf("앱 생성 실패: %w", err)

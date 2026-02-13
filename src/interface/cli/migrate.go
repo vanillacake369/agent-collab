@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"agent-collab/src/infrastructure/storage"
 )
@@ -193,7 +194,19 @@ func init() {
 }
 
 // getDataDir returns the data directory path.
+// Checks AGENT_COLLAB_DATA_DIR environment variable first.
 func getDataDir() string {
+	// Check environment variable first (for Docker/container use)
+	if envDir := os.Getenv("AGENT_COLLAB_DATA_DIR"); envDir != "" {
+		return envDir
+	}
+
+	// Fall back to viper config
+	if viperDir := viper.GetString("data_dir"); viperDir != "" {
+		return viperDir
+	}
+
+	// Default to ~/.agent-collab
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return ".agent-collab"
