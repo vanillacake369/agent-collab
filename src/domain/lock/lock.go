@@ -31,13 +31,28 @@ type SemanticLock struct {
 var fencingTokenCounter uint64
 
 // NewSemanticLock creates a new semantic lock with the given parameters.
-// Panics if target or holderID is nil/empty (programming errors).
+//
+// Deprecated: Use NewSemanticLockSafe instead. This function panics on invalid input.
+// NewSemanticLockSafe returns an error for validation failures.
 func NewSemanticLock(target *SemanticTarget, holderID, holderName, intention string) *SemanticLock {
+	lock, err := NewSemanticLockSafe(target, holderID, holderName, intention)
+	if err != nil {
+		panic(err.Error())
+	}
+	return lock
+}
+
+// NewSemanticLockSafe creates a new semantic lock with the given parameters.
+// Returns an error if validation fails instead of panicking.
+func NewSemanticLockSafe(target *SemanticTarget, holderID, holderName, intention string) (*SemanticLock, error) {
 	if target == nil {
-		panic("target cannot be nil")
+		return nil, NewValidationError("target", "cannot be nil")
 	}
 	if holderID == "" {
-		panic("holderID cannot be empty")
+		return nil, NewValidationError("holderID", "cannot be empty")
+	}
+	if holderName == "" {
+		holderName = "unknown"
 	}
 
 	now := time.Now()
@@ -52,7 +67,7 @@ func NewSemanticLock(target *SemanticTarget, holderID, holderName, intention str
 		AcquiredAt:   now,
 		ExpiresAt:    now.Add(DefaultTTL),
 		RenewCount:   0,
-	}
+	}, nil
 }
 
 // IsExpired는 락이 만료되었는지 확인합니다.
@@ -95,14 +110,18 @@ func (l *SemanticLock) RenewWithTTL(ttl time.Duration) error {
 	return nil
 }
 
+// Lock ID prefix constant
+const lockIDPrefix = "lock-"
+
 // generateLockID generates a unique lock ID.
-// Panics if crypto/rand fails (should never happen in practice).
+// Falls back to time-based ID if crypto/rand fails (should never happen in practice).
 func generateLockID() string {
-	bytes := make([]byte, 16)
-	if _, err := rand.Read(bytes); err != nil {
-		panic("crypto/rand failed: " + err.Error())
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback: use timestamp-based ID (highly unlikely path)
+		return lockIDPrefix + hex.EncodeToString([]byte(time.Now().String()))[:12]
 	}
-	return "lock-" + hex.EncodeToString(bytes)[:12]
+	return lockIDPrefix + hex.EncodeToString(b)[:12]
 }
 
 // LockState는 락 상태입니다.
