@@ -1,0 +1,108 @@
+# Docker Compose for Claude Code Integration Testing
+# 3 AI agents collaborating via agent-collab MCP plugin
+#
+# Usage:
+#   1. Set token:        export CLAUDE_OAUTH_TOKEN=sk-ant-oat01-...
+#   2. Start cluster:    make claude-up
+#   3. Run agents:       make claude-alice / claude-bob / claude-charlie
+
+services:
+  # Bootstrap node with Claude Code (Alice - Authentication)
+  alice:
+    build:
+      context: .
+      dockerfile: Dockerfile.claude
+    platform: linux/amd64  # Ensure consistent architecture
+    container_name: claude-alice
+    hostname: alice
+    environment:
+      - AGENT_COLLAB_PEER_ID=alice
+      - AGENT_COLLAB_LISTEN_ADDR=/ip4/0.0.0.0/tcp/9000
+      - AGENT_COLLAB_DATA_DIR=/data
+      - AGENT_COLLAB_BOOTSTRAP=true
+      - AGENT_NAME=Alice
+      - AGENT_ROLE=authentication
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_OAUTH_TOKEN}
+    volumes:
+      - alice-data:/data
+      - alice-claude:/home/agent/.claude
+      - ./test-workspace:/workspace
+    working_dir: /workspace
+    networks:
+      collab-net:
+        ipv4_address: 172.28.0.10
+    stdin_open: true
+    tty: true
+
+  # Peer node with Claude Code (Bob - Database)
+  bob:
+    build:
+      context: .
+      dockerfile: Dockerfile.claude
+    platform: linux/amd64  # Ensure consistent architecture
+    container_name: claude-bob
+    hostname: bob
+    environment:
+      - AGENT_COLLAB_PEER_ID=bob
+      - AGENT_COLLAB_LISTEN_ADDR=/ip4/0.0.0.0/tcp/9000
+      - AGENT_COLLAB_DATA_DIR=/data
+      - AGENT_COLLAB_BOOTSTRAP_PEERS=/ip4/172.28.0.10/tcp/9000/p2p/alice
+      - AGENT_NAME=Bob
+      - AGENT_ROLE=database
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_OAUTH_TOKEN}
+    volumes:
+      - bob-data:/data
+      - bob-claude:/home/agent/.claude
+      - ./test-workspace:/workspace
+    working_dir: /workspace
+    networks:
+      collab-net:
+        ipv4_address: 172.28.0.11
+    depends_on:
+      - alice
+    stdin_open: true
+    tty: true
+
+  # Peer node with Claude Code (Charlie - API)
+  charlie:
+    build:
+      context: .
+      dockerfile: Dockerfile.claude
+    platform: linux/amd64  # Ensure consistent architecture
+    container_name: claude-charlie
+    hostname: charlie
+    environment:
+      - AGENT_COLLAB_PEER_ID=charlie
+      - AGENT_COLLAB_LISTEN_ADDR=/ip4/0.0.0.0/tcp/9000
+      - AGENT_COLLAB_DATA_DIR=/data
+      - AGENT_COLLAB_BOOTSTRAP_PEERS=/ip4/172.28.0.10/tcp/9000/p2p/alice
+      - AGENT_NAME=Charlie
+      - AGENT_ROLE=api
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_OAUTH_TOKEN}
+    volumes:
+      - charlie-data:/data
+      - charlie-claude:/home/agent/.claude
+      - ./test-workspace:/workspace
+    working_dir: /workspace
+    networks:
+      collab-net:
+        ipv4_address: 172.28.0.12
+    depends_on:
+      - alice
+    stdin_open: true
+    tty: true
+
+networks:
+  collab-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  alice-data:
+  bob-data:
+  charlie-data:
+  alice-claude:   # Alice's Claude config
+  bob-claude:     # Bob's Claude config
+  charlie-claude: # Charlie's Claude config

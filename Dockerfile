@@ -1,4 +1,36 @@
-# Runtime stage - GoReleaser provides pre-built binary
+# =============================================================================
+# Multi-stage Dockerfile for agent-collab
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Build stage
+# -----------------------------------------------------------------------------
+FROM golang:latest AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy go mod files first for caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build binary
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG DATE=unknown
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
+    -o /app/agent-collab ./src
+
+# -----------------------------------------------------------------------------
+# Runtime stage
+# -----------------------------------------------------------------------------
 FROM alpine:3.21
 
 # Install runtime dependencies
@@ -7,21 +39,23 @@ RUN apk add --no-cache ca-certificates tzdata
 # Create non-root user
 RUN adduser -D -g '' agentcollab
 
-# Copy binary from GoReleaser build
-COPY agent-collab /usr/local/bin/agent-collab
+# Copy binary from builder
+COPY --from=builder /app/agent-collab /app/agent-collab
+
+# Create data directory with proper permissions
+RUN mkdir -p /data && chown agentcollab:agentcollab /data
 
 # Switch to non-root user
 USER agentcollab
 
-# Create data directory
-RUN mkdir -p /home/agentcollab/.agent-collab
+WORKDIR /app
 
 # Expose P2P port
-EXPOSE 4001
+EXPOSE 9000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD agent-collab status || exit 1
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=3 \
+    CMD /app/agent-collab status || exit 1
 
-ENTRYPOINT ["agent-collab"]
+ENTRYPOINT ["/app/agent-collab"]
 CMD ["daemon", "run"]
