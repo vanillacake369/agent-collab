@@ -22,7 +22,7 @@ type KeyPair struct {
 // StoredKey는 저장된 키 형식입니다.
 type StoredKey struct {
 	Type       string `json:"type"`
-	PrivateKey string `json:"private_key"`
+	PrivateKey string `json:"private_key"` // #nosec G117 - crypto key, intentionally named
 	PeerID     string `json:"peer_id"`
 }
 

@@ -58,7 +58,7 @@ type Device interface {
 
 // DeviceConfig holds the WireGuard device configuration.
 type DeviceConfig struct {
-	PrivateKey   []byte
+	PrivateKey   []byte // #nosec G117 - WireGuard key, intentionally named
 	ListenPort   int
 	FirewallMark int
 	Peers        []PeerConfig

@@ -11,7 +11,7 @@ const Version = "1.0.0"
 
 // Config holds WireGuard interface configuration.
 type Config struct {
-	PrivateKey string  `json:"private_key"`
+	PrivateKey string  `json:"private_key"` // #nosec G117 - WireGuard key, intentionally named
 	PublicKey  string  `json:"public_key"`
 	ListenPort int     `json:"listen_port"`
 	LocalIP    string  `json:"local_ip"` // e.g., "10.100.0.1/24"
@@ -30,7 +30,7 @@ type Peer struct {
 
 // KeyPair holds a WireGuard Curve25519 key pair.
 type KeyPair struct {
-	PrivateKey string `json:"private_key"`
+	PrivateKey string `json:"private_key"` // #nosec G117 - WireGuard key, intentionally named
 	PublicKey  string `json:"public_key"`
 }
 

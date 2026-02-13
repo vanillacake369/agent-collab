@@ -710,7 +710,7 @@ func (s *Server) watchResource(w http.ResponseWriter, r *http.Request, resourceT
 
 	watcher, err := watchFn(r.Context(), opts)
 	if err != nil {
-		fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+		fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error()) // #nosec G705 - SSE error message, not rendered as HTML
 		flusher.Flush()
 		return
 	}

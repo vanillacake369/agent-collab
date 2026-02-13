@@ -233,7 +233,7 @@ func (a *LegacyAdapter) releaseLock(w http.ResponseWriter, r *http.Request) {
 
 	// Call new API
 	delReq, _ := http.NewRequest("DELETE", a.apiServerURL+"/api/v1/locks/"+req.LockID, nil)
-	resp, err := a.client.Do(delReq)
+	resp, err := a.client.Do(delReq) // #nosec G704 - URL is constructed from trusted internal config
 	if err != nil {
 		a.writeJSON(w, http.StatusInternalServerError, LegacyLockResponse{
 			Success: false,

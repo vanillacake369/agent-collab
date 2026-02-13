@@ -106,7 +106,7 @@ func (p *OpenAIProvider) Embed(ctx context.Context, texts []string) ([][]float32
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.config.APIKey)
 
-	resp, err := p.client.Do(req)
+	resp, err := p.client.Do(req) // #nosec G704 - URL is from trusted embedding config
 	if err != nil {
 		return nil, 0, fmt.Errorf("request failed: %w", err)
 	}

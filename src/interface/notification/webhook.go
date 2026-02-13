@@ -108,7 +108,7 @@ func (w *WebhookNotifier) Send(ctx context.Context, n *Notification) error {
 		req.Header.Set(key, value)
 	}
 
-	resp, err := w.client.Do(req)
+	resp, err := w.client.Do(req) // #nosec G704 - URL is from trusted config
 	if err != nil {
 		return fmt.Errorf("webhook request failed: %w", err)
 	}
@@ -224,7 +224,7 @@ func (s *SlackNotifier) Send(ctx context.Context, n *Notification) error {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := s.client.Do(req)
+	resp, err := s.client.Do(req) // #nosec G704 - URL is from trusted config
 	if err != nil {
 		return fmt.Errorf("Slack request failed: %w", err)
 	}

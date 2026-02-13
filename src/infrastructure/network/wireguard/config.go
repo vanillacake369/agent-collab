@@ -18,7 +18,7 @@ type ConfigFile struct {
 
 // InterfaceConfig represents the [Interface] section of a WireGuard config.
 type InterfaceConfig struct {
-	PrivateKey string `json:"private_key"`
+	PrivateKey string `json:"private_key"` // #nosec G117 - WireGuard key, intentionally named
 	ListenPort int    `json:"listen_port,omitempty"`
 	Address    string `json:"address"` // CIDR notation
 	MTU        int    `json:"mtu,omitempty"`

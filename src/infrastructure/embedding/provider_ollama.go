@@ -115,7 +115,7 @@ func (p *OllamaProvider) embedSingle(ctx context.Context, text string) ([]float3
 
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := p.client.Do(req)
+	resp, err := p.client.Do(req) // #nosec G704 - URL is from trusted embedding config
 	if err != nil {
 		return nil, 0, fmt.Errorf("request failed (is Ollama running?): %w", err)
 	}

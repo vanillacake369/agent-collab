@@ -86,7 +86,7 @@ const (
 // ProviderConfig contains configuration for a specific provider.
 type ProviderConfig struct {
 	Provider    Provider          `json:"provider"`
-	APIKey      string            `json:"api_key,omitempty"`
+	APIKey      string            `json:"api_key,omitempty"` // #nosec G117 - API key field, intentionally named
 	BaseURL     string            `json:"base_url,omitempty"`
 	Model       string            `json:"model,omitempty"`
 	MaxTokens   int               `json:"max_tokens,omitempty"`
