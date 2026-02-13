@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/sahilm/fuzzy"
 
+	"agent-collab/src/interface/daemon"
 	"agent-collab/src/interface/tui/mode"
 )
 
@@ -105,6 +106,9 @@ type Model struct {
 
 	// 설정
 	refreshInterval time.Duration
+
+	// Daemon client (optional, for dependency injection in tests)
+	daemonClient *daemon.Client
 }
 
 // CommandHint는 명령 자동완성 힌트입니다.

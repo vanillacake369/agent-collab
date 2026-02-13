@@ -41,6 +41,18 @@ func NewClient() *Client {
 	}
 }
 
+// NewClientWithTransport creates a daemon client with custom transport (for testing).
+func NewClientWithTransport(transport *http.Transport, socketPath string) *Client {
+	return &Client{
+		socketPath:  socketPath,
+		eventClient: NewEventClient(),
+		httpClient: &http.Client{
+			Transport: transport,
+			Timeout:   5 * time.Second,
+		},
+	}
+}
+
 // SubscribeEvents connects to the event stream and returns event/error channels.
 func (c *Client) SubscribeEvents(ctx context.Context) (<-chan Event, <-chan error, error) {
 	if err := c.eventClient.Connect(ctx); err != nil {
@@ -324,6 +336,84 @@ func (c *Client) Shutdown() error {
 	var result GenericResponse
 	json.NewDecoder(resp.Body).Decode(&result)
 	return nil
+}
+
+// Leave initiates graceful cluster leave.
+func (c *Client) Leave() (*LeaveResponse, error) {
+	resp, err := c.post("/leave", LeaveRequest{})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result LeaveResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	if result.Error != "" {
+		return &result, fmt.Errorf("%s", result.Error)
+	}
+	return &result, nil
+}
+
+// LeaveStatus returns the current leave process status.
+func (c *Client) LeaveStatus() (*LeaveStatusResponse, error) {
+	resp, err := c.get("/leave/status")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result LeaveStatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// TokenUsage returns token usage statistics.
+func (c *Client) TokenUsage() (*TokenUsageResponse, error) {
+	resp, err := c.get("/tokens/usage")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result TokenUsageResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ContextStats returns context and vector store statistics.
+func (c *Client) ContextStats() (*ContextStatsResponse, error) {
+	resp, err := c.get("/context/stats")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result ContextStatsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// Metrics returns system and network metrics.
+func (c *Client) Metrics() (map[string]interface{}, error) {
+	resp, err := c.get("/metrics")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // CheckCohesion checks if work aligns with existing team context.

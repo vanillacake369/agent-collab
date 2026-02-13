@@ -416,28 +416,87 @@ func (m *Model) executeCommand(input string) tea.Cmd {
 // 액션 실행 함수들
 
 func (m *Model) executeInit(projectName string) error {
-	// TODO: 실제 init 로직 연동
-	m.projectName = projectName
+	return m.executeInitWithClient(projectName)
+}
+
+func (m *Model) executeInitWithClient(projectName string) error {
+	client := m.getClient()
+	result, err := client.Init(projectName)
+	if err != nil {
+		return err
+	}
+	m.projectName = result.ProjectName
+	m.nodeID = result.NodeID
 	m.SetResult("프로젝트 '"+projectName+"' 초기화 완료", nil)
 	return nil
 }
 
 func (m *Model) executeJoin(token string) error {
-	// TODO: 실제 join 로직 연동
+	return m.executeJoinWithClient(token)
+}
+
+func (m *Model) executeJoinWithClient(token string) error {
+	client := m.getClient()
+	result, err := client.Join(token)
+	if err != nil {
+		return err
+	}
+	m.projectName = result.ProjectName
+	m.peerCount = result.ConnectedPeers
 	m.SetResult("클러스터 참여 완료 (토큰: "+token[:min(10, len(token))]+"...)", nil)
 	return nil
 }
 
 func (m *Model) executeLeave() error {
-	// TODO: 실제 leave 로직 연동
+	return m.executeLeaveWithClient()
+}
+
+func (m *Model) executeLeaveWithClient() error {
+	client := m.getClient()
+	_, err := client.Leave()
+	if err != nil {
+		return err
+	}
 	m.SetResult("클러스터 탈퇴 완료", nil)
 	return nil
 }
 
 func (m *Model) executeReleaseLock(lockID string) error {
-	// TODO: 실제 lock release 로직 연동
+	return m.executeReleaseLockWithClient(lockID)
+}
+
+func (m *Model) executeReleaseLockWithClient(lockID string) error {
+	client := m.getClient()
+	err := client.ReleaseLock(lockID)
+	if err != nil {
+		return err
+	}
 	m.SetResult("락 '"+lockID+"' 해제 완료", nil)
 	return nil
+}
+
+// fetchTokenUsageWithClient fetches token usage from daemon.
+func (m *Model) fetchTokenUsageWithClient() (*TokensMsg, error) {
+	client := m.getClient()
+	usage, err := client.TokenUsage()
+	if err != nil {
+		return nil, err
+	}
+	return &TokensMsg{
+		TodayUsed:   int64(usage.TokensToday),
+		DailyLimit:  int64(usage.DailyLimit),
+		CostToday:   usage.CostToday,
+		CostWeek:    usage.CostWeek,
+		CostMonth:   usage.CostMonth,
+		TokensWeek:  int64(usage.TokensWeek),
+		TokensMonth: int64(usage.TokensMonth),
+	}, nil
+}
+
+// fetchContextStatsWithClient fetches context stats from daemon.
+func (m *Model) fetchContextStatsWithClient() (*daemon.ContextStatsResponse, error) {
+	client := m.getClient()
+	return client.ContextStats()
 }
 
 // min 헬퍼

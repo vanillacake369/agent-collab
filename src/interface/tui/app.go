@@ -38,6 +38,13 @@ func WithRefreshInterval(d time.Duration) Option {
 	}
 }
 
+// WithClient sets a custom daemon client (for testing).
+func WithClient(client *daemon.Client) Option {
+	return func(m *Model) {
+		m.daemonClient = client
+	}
+}
+
 // NewApp은 새 TUI 앱을 생성합니다.
 func NewApp(opts ...Option) *Model {
 	// 명령 입력 초기화
@@ -61,6 +68,19 @@ func NewApp(opts ...Option) *Model {
 	}
 
 	return m
+}
+
+// NewModelWithClient creates a new TUI model with a custom daemon client (for testing).
+func NewModelWithClient(client *daemon.Client) *Model {
+	return NewApp(WithClient(client))
+}
+
+// getClient returns the daemon client (uses injected client if available).
+func (m *Model) getClient() *daemon.Client {
+	if m.daemonClient != nil {
+		return m.daemonClient
+	}
+	return daemon.NewClient()
 }
 
 // defaultCommandHints는 기본 명령 힌트를 반환합니다.
