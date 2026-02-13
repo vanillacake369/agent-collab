@@ -187,6 +187,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/status", s.handleStatus)
 	mux.HandleFunc("/init", s.handleInit)
 	mux.HandleFunc("/join", s.handleJoin)
+	mux.HandleFunc("/leave", s.handleLeave)
+	mux.HandleFunc("/leave/status", s.handleLeaveStatus)
 	mux.HandleFunc("/lock/acquire", s.handleAcquireLock)
 	mux.HandleFunc("/lock/release", s.handleReleaseLock)
 	mux.HandleFunc("/lock/list", s.handleListLocks)
@@ -196,9 +198,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/agents/list", s.handleListAgents)
 	mux.HandleFunc("/context/watch", s.handleWatchFile)
 	mux.HandleFunc("/context/share", s.handleShareContext)
+	mux.HandleFunc("/context/stats", s.handleContextStats)
 	mux.HandleFunc("/cohesion/check", s.handleCheckCohesion)
 	mux.HandleFunc("/events/list", s.handleListEvents)
 	mux.HandleFunc("/metrics", s.handleMetrics)
+	mux.HandleFunc("/tokens/usage", s.handleTokenUsage)
 	mux.HandleFunc("/shutdown", s.handleShutdown)
 }
 
