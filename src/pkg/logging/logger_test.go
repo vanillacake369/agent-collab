@@ -54,10 +54,10 @@ func TestLogger_With(t *testing.T) {
 
 func TestLogger_Levels(t *testing.T) {
 	tests := []struct {
-		name     string
-		logFunc  func(*Logger)
-		level    string
-		wantLog  bool
+		name    string
+		logFunc func(*Logger)
+		level   string
+		wantLog bool
 	}{
 		{"debug at info level", func(l *Logger) { l.Debug("test") }, "info", false},
 		{"info at info level", func(l *Logger) { l.Info("test") }, "info", true},

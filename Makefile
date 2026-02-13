@@ -55,7 +55,7 @@ lint:
 # Format check (for CI)
 fmt:
 	@echo "📝 Checking format..."
-	@test -z "$$(gofmt -l . 2>&1)" || (echo "gofmt issues:" && gofmt -l . && exit 1)
+	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './test-workspace/*' -not -path './vendor/*') 2>&1)" || (echo "gofmt issues:" && gofmt -l $$(find . -name '*.go' -not -path './test-workspace/*' -not -path './vendor/*') && exit 1)
 	@echo "✓ Format OK"
 
 # Format fix
@@ -140,7 +140,7 @@ staticcheck:
 # Gosec
 gosec:
 	@echo "🔐 Running gosec..."
-	gosec -exclude=G104,G115,G204,G304,G301,G302,G306,G112 -exclude-generated -quiet ./...
+	gosec -exclude=G104,G115,G204,G304,G301,G302,G306,G112 -exclude-generated -exclude-dir=test-workspace -quiet ./...
 
 # Security scan
 security: gosec
@@ -294,7 +294,7 @@ claude-test: claude-clean
 	@echo "============================================"
 	@echo ""
 	@echo "[1/5] Building cluster (fresh)..."
-	@git checkout test-workspace/main.go 2>/dev/null || true
+	@cp test-workspace/main.go.tmpl test-workspace/main.go
 	@$(MAKE) claude-up
 	@echo ""
 	@echo "[2/5] Running Alice (authentication)..."

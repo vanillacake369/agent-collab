@@ -306,9 +306,9 @@ func TestFeature_CategorizedErrors_Scenario_ErrorExtraction(t *testing.T) {
 func TestFeature_CategorizedErrors_Scenario_CategoryRouting(t *testing.T) {
 	t.Run("Given errors of different categories", func(t *testing.T) {
 		cases := []struct {
-			name         string
-			err          Categorized
-			expectedCat  Category
+			name        string
+			err         Categorized
+			expectedCat Category
 		}{
 			{
 				name:        "ValidationError",

@@ -152,9 +152,9 @@ type LeaveStatusResponse struct {
 
 // LeaveResponse is the response for leave request.
 type LeaveResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Success bool                `json:"success"`
+	Message string              `json:"message,omitempty"`
+	Error   string              `json:"error,omitempty"`
 	Status  LeaveStatusResponse `json:"status"`
 }
 

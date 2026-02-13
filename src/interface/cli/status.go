@@ -38,12 +38,12 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		if err == nil {
 			// Convert daemon status to app status format
 			status := &application.Status{
-				Running:           true,
-				ProjectName:       daemonStatus.ProjectName,
-				NodeID:            daemonStatus.NodeID,
-				PeerCount:         daemonStatus.PeerCount,
-				LockCount:         daemonStatus.LockCount,
-				EmbeddingCount:    0, // Not available from daemon status
+				Running:        true,
+				ProjectName:    daemonStatus.ProjectName,
+				NodeID:         daemonStatus.NodeID,
+				PeerCount:      daemonStatus.PeerCount,
+				LockCount:      daemonStatus.LockCount,
+				EmbeddingCount: 0, // Not available from daemon status
 			}
 			if statusWatch {
 				// For watch mode, we need the app
