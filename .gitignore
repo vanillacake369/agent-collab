@@ -50,6 +50,7 @@ logs/
 *.p12
 .env
 .env.local
+.env.gpg
 !.env.example
 
 # Build artifacts
