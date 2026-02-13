@@ -1,68 +1,82 @@
 ---
 name: collab-start
-description: Start a collaborative work session. Checks for warnings, recent activity, and cohesion with team context before beginning work. Use this at the START of any task.
-allowed-tools: Bash
-user-invocable: true
-disable-model-invocation: false
+description: Use when user says "start collaboration", "begin teamwork", "협업 시작", "작업 전 확인", "check team status", "what are others doing", "다른 에이전트 확인", or wants to verify cluster connection and team context before starting work on a shared codebase.
+version: 1.0.0
 ---
 
-# Start Collaborative Session
+# Collaborative Session Start
 
-Before starting any work, check the cluster and verify your work aligns with team context.
+This skill helps you start a collaborative work session by checking the cluster status, finding relevant context from other agents, and verifying your work aligns with team direction.
 
-## Steps
+## When to Use
 
-1. **Check warnings** - Call `get_warnings` to see if there are any conflicts or important updates:
-```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_warnings","arguments":{}}}' | agent-collab mcp serve 2>/dev/null
+- Before starting any work in a multi-agent environment
+- When you want to see what other agents have been working on
+- When you need to check for potential conflicts
+- When the user mentions "collaboration", "teamwork", or "other agents"
+
+## Workflow
+
+### Step 1: Check Cluster Status
+Call `cluster_status` MCP tool to verify connection:
+```json
+{"name": "cluster_status", "arguments": {}}
 ```
 
-2. **Get recent events** - Call `get_events` to see what other agents have been doing:
-```bash
-echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_events","arguments":{"limit":10}}}' | agent-collab mcp serve 2>/dev/null
+### Step 2: Get Warnings
+Call `get_warnings` to see any conflicts or alerts:
+```json
+{"name": "get_warnings", "arguments": {}}
 ```
 
-3. **Search for related context** - If working on a specific feature, search for related work:
-```bash
-echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search_similar","arguments":{"query":"$ARGUMENTS","limit":5}}}' | agent-collab mcp serve 2>/dev/null
+### Step 3: Get Recent Events
+Call `get_events` to see recent activity:
+```json
+{"name": "get_events", "arguments": {"limit": 10}}
 ```
 
-4. **Check cohesion** - If the user has described their intended work, verify it aligns with existing context:
-```bash
-echo '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"check_cohesion","arguments":{"type":"before","intention":"$ARGUMENTS"}}}' | agent-collab mcp serve 2>/dev/null
+### Step 4: Search Related Context
+If the user described their intended work, search for related context:
+```json
+{"name": "search_similar", "arguments": {"query": "<user's intention>", "limit": 5}}
 ```
 
-## Output
+### Step 5: Check Cohesion
+Verify the user's intention aligns with existing work:
+```json
+{"name": "check_cohesion", "arguments": {"type": "before", "intention": "<user's intention>"}}
+```
+
+## Output Guidelines
 
 Report to the user:
-- Any warnings that need attention
-- Recent activity from other agents that might be relevant
-- Related context that was found
-- **Cohesion check result** - whether the intended work aligns with team context
+1. Cluster connection status and peer count
+2. Any warnings that need attention
+3. Recent activity from other agents
+4. Related context that was found
+5. Cohesion check results
 
-If there are lock conflicts, suggest working on a different file or waiting.
+If there are conflicts, suggest alternatives or ask how to proceed.
 
-If cohesion check shows potential conflicts:
-- Show the conflicting contexts
-- Ask user to confirm if they want to proceed
-- Suggest discussing with the team if it's a significant direction change
+## Example Interaction
 
-## Example
-
-User: `/collab-start refactor authentication to use sessions`
+User: "I want to start working on the authentication module"
 
 Response:
 ```
-📡 Cluster Status: Connected (3 agents online)
+## Cluster Status
+Connected with 2 other agents
 
-⚠️ Cohesion Alert:
-Your intention "refactor authentication to use sessions" may conflict with:
-- Agent-A: "JWT-based authentication implemented" (auth/handler.go)
+## Recent Activity
+- 30m ago: Agent-A shared context about JWT validation (auth/jwt.go)
+- 1h ago: Agent-B released lock on api/middleware.go
 
-Recent Activity:
-- 30m ago: Agent-A shared context about JWT validation
-- 1h ago: Agent-B released lock on api/routes.go
+## Related Context Found
+- "JWT token validation with RS256" (auth/jwt.go) - Agent-A
+- "Auth middleware integration" (api/middleware.go) - Agent-B
 
-Do you want to proceed? If this is an intentional direction change,
-consider using /collab-share after completing work to inform the team.
+## Cohesion Check: OK
+Your work aligns with existing authentication approach.
+
+Ready to proceed. Remember to use /collab:share when done.
 ```

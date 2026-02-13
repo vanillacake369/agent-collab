@@ -1,72 +1,100 @@
 ---
 name: collab-share
-description: Share your completed work with other agents. Checks cohesion before sharing to detect potential conflicts. Use this AFTER finishing any code changes to broadcast what you did.
-allowed-tools: Bash
-user-invocable: true
-disable-model-invocation: false
+description: Use when user says "share my work", "tell others", "공유", "다른 에이전트에게 알려", "broadcast changes", "finished working on", "completed", "작업 완료", "done with", or wants to share completed work with other agents in the cluster.
+version: 1.0.0
 ---
 
-# Share Work with Cluster
+# Share Work with Team
 
-After completing any code changes, share the context with other agents so they know what you did.
+This skill helps you share your completed work with other agents so they can see what you did and avoid conflicts.
 
-## Usage
+## When to Use
 
-```
-/collab-share <file_path> <summary of changes>
-```
+- After completing work on a file
+- When the user says "share", "tell others", "broadcast", "공유"
+- When the user mentions they finished a task
+- When you want to inform the team about changes
 
-## Example
+## Workflow
 
-```
-/collab-share auth/login.go Added JWT token validation with 24h expiry
-```
+### Step 1: Identify What to Share
+Determine the file path and summary from user's message or recent edits.
 
-## Steps
-
-1. **Check cohesion** - Verify the completed work aligns with existing context:
-```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"check_cohesion","arguments":{"type":"after","result":"$ARGUMENTS"}}}' | agent-collab mcp serve 2>/dev/null
-```
-
-2. **If cohesion check passes or user confirms**, share the context:
-```bash
-echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"share_context","arguments":{"file_path":"$0","content":"$ARGUMENTS"}}}' | agent-collab mcp serve 2>/dev/null
+### Step 2: Check Cohesion (Post-work)
+Verify the completed work aligns with team direction:
+```json
+{"name": "check_cohesion", "arguments": {"type": "after", "intention": "<summary>", "file_path": "<file_path>"}}
 ```
 
-3. **Confirm success** - Verify the context was shared and note the document ID.
+### Step 3: Share Context
+Broadcast the work to the cluster:
+```json
+{"name": "share_context", "arguments": {"file_path": "<file_path>", "content": "<detailed summary>"}}
+```
 
-## Cohesion Check Handling
+### Step 4: Release Lock
+If holding a lock on this file, release it:
+```json
+{"name": "list_locks", "arguments": {}}
+```
 
-- **cohesive**: Proceed with sharing
-- **conflict**: Warn user about potential conflict with existing context, ask for confirmation
-- **uncertain**: Proceed but note that other agents should review
+Then:
+```json
+{"name": "release_lock", "arguments": {"lock_id": "<lock_id>"}}
+```
 
-## Best Practices
+## Content Guidelines
 
-When writing the summary, include:
-- **What** changed (function names, features added)
-- **Why** it was changed (bug fix, new feature, refactor)
-- **Impact** on other parts of the codebase
+When sharing context, include:
+1. **What changed** - Brief description of modifications
+2. **Why** - Reason for the changes
+3. **How to use** - If you added functions/APIs, how should others call them
+4. **Dependencies** - Any new imports or requirements
 
-Example good summaries:
+Good summary examples:
 - "Added bcrypt password hashing to User.SetPassword(). Login() now uses ComparePassword()."
 - "Fixed connection leak in DB.Query(). Added defer conn.Close() to all query paths."
 - "Refactored AuthMiddleware to use JWT claims. Breaking change: old session tokens invalid."
 
-## Example with Conflict
+## Example Interaction
 
-User: `/collab-share auth/handler.go Replaced JWT with session-based auth`
+User: "Share that I added JWT validation to the auth handler"
 
 Response:
 ```
-⚠️ Cohesion Check Warning:
+## Context Shared
+
+File: auth/handler.go
+Summary: Added JWT token validation with RS256 signing
+
+Content shared:
+- Added `ValidateToken(token string) (*Claims, error)` function
+- Checks token expiry and signature
+- Returns parsed claims on success
+- Requires `JWT_PUBLIC_KEY` environment variable
+
+## Cohesion: OK
+Aligns with existing authentication approach.
+
+## Lock Released
+Released lock on auth/handler.go
+
+Other agents will now see this context when searching for authentication-related work.
+```
+
+## Handling Conflicts
+
+If cohesion check shows conflict:
+
+```
+## Cohesion Warning
+
 Your change may conflict with existing context:
 - Agent-A: "JWT-based stateless authentication" (auth/handler.go)
   Reason: Conflicting authentication approach
 
 This appears to be a significant direction change.
-Do you want to share this context anyway? (This will inform other agents of the change)
-
-[Proceed] [Cancel]
+Do you want to share anyway? This will inform other agents of the change.
 ```
+
+Ask user to confirm before proceeding.

@@ -1,100 +1,105 @@
 ---
 name: collab-cohesion
-description: Check if your work aligns with team context. Use BEFORE starting work to check intention, or AFTER completing work to verify alignment. Helps prevent conflicting changes with other agents.
-allowed-tools: Bash
-user-invocable: true
-disable-model-invocation: false
+description: Use when user says "check alignment", "정합성 확인", "does this conflict", "충돌 확인", "before I start", "작업 전 확인", "after I'm done", "will this break", "is this consistent", or wants to verify their work aligns with team context to prevent conflicts.
+version: 1.0.0
 ---
 
 # Check Work Cohesion
 
-Ensure your work aligns with existing team context to prevent conflicts.
+Verify your work aligns with existing team context to prevent conflicts with other agents.
 
 ## When to Use
 
-### Before Starting Work (Recommended)
-When you receive a task that might affect shared code or architecture:
-- "Change authentication to session-based"
-- "Refactor the API layer"
-- "Migrate database to NoSQL"
+### Before Starting Work
+- When planning significant changes
+- When the task might affect shared code or architecture
+- Examples: "refactor authentication", "change database schema"
 
 ### After Completing Work
-After making significant changes, verify they align with team decisions.
+- Before sharing context
+- When making significant changes
+- To verify changes don't conflict with team decisions
 
-## Usage
+## Workflow
 
-### Before Check
-```
-/collab-cohesion before: implement session-based authentication
-```
-
-### After Check
-```
-/collab-cohesion after: replaced JWT with session tokens in auth/handler.go
+### For "Before" Check
+```json
+{"name": "check_cohesion", "arguments": {"type": "before", "intention": "<what user plans to do>"}}
 ```
 
-## How It Works
-
-1. **Before Check**: Analyzes your intention against existing shared contexts
-   - Finds related work by other agents
-   - Detects potential conflicts (e.g., JWT vs Session)
-   - Suggests reviewing related contexts before proceeding
-
-2. **After Check**: Validates completed work against existing contexts
-   - Identifies if your changes conflict with previous decisions
-   - Recommends sharing context to inform other agents
-
-## Steps
-
-1. **Parse the check type and content** from the user's input
-
-2. **Call check_cohesion**:
-```bash
-# For 'before' check
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"check_cohesion","arguments":{"type":"before","intention":"$INTENTION"}}}' | agent-collab mcp serve 2>/dev/null
-
-# For 'after' check
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"check_cohesion","arguments":{"type":"after","result":"$RESULT"}}}' | agent-collab mcp serve 2>/dev/null
+### For "After" Check
+```json
+{"name": "check_cohesion", "arguments": {"type": "after", "intention": "<what was done>", "file_path": "<modified file>"}}
 ```
 
-3. **Interpret the result**:
-   - `cohesive`: Safe to proceed
-   - `conflict`: Review related contexts, discuss with user
-   - `uncertain`: Proceed with caution, consider sharing context
-
-## Example Output
+## Interpreting Results
 
 ### Cohesive (Safe)
 ```
-✓ Your work aligns with existing context.
+## Cohesion Check: OK
 
-Related contexts found:
-- Agent-A: "JWT token validation implemented" (auth/handler.go)
+Your work aligns with existing context.
 
-You can proceed safely. Consider sharing context when done.
+Related contexts:
+- Agent-A: "JWT token validation" (auth/handler.go)
+
+Safe to proceed.
 ```
 
 ### Conflict Detected
 ```
-⚠ Potential conflict detected!
+## Cohesion Check: CONFLICT
 
-Your intention: "Switch to session-based authentication"
+Your intention may conflict with existing work:
+
+Your plan: "Switch to session-based authentication"
 
 Conflicts with:
 - Agent-A: "JWT-based stateless authentication" (auth/handler.go)
-  Reason: Conflicting authentication approach
+  Reason: Different authentication approach
 
 Suggestions:
-1. Review the existing JWT implementation
-2. Discuss with team if this direction change is intended
+1. Review existing JWT implementation first
+2. Discuss with team if direction change is intended
 3. If proceeding, share context to inform other agents
 ```
 
-## Integration with Workflow
+### Uncertain
+```
+## Cohesion Check: UNCERTAIN
 
-Recommended workflow:
-1. `/collab-start` - Check cluster status
-2. `/collab-cohesion before: ...` - Verify intention alignment
-3. Work on the task
-4. `/collab-cohesion after: ...` - Verify result alignment
-5. `/collab-share` - Share your completed work
+No direct conflicts found, but limited context available.
+
+Proceed with caution and share context when done.
+```
+
+## Recommended Workflow
+
+```
+1. /collab:start                    # Check cluster
+2. /collab:cohesion before: ...     # Verify plan
+3. [Do the work]
+4. /collab:cohesion after: ...      # Verify result
+5. /collab:share                    # Share with team
+```
+
+## Example
+
+User: "I'm going to refactor the authentication to use sessions instead of JWT"
+
+Before check response:
+```
+## Cohesion Check: CONFLICT
+
+Your intention "refactor to session-based auth" may conflict with:
+- Agent-A (2h ago): "Implemented JWT RS256 token validation"
+  File: auth/jwt.go
+  Summary: Added stateless JWT authentication
+
+This appears to be a significant direction change.
+
+Options:
+1. Review Agent-A's work first
+2. Proceed if this is an intentional change (inform team)
+3. Cancel and discuss with team
+```

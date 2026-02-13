@@ -9,5 +9,8 @@
   "homepage": "https://github.com/vanillacake369/agent-collab",
   "repository": "https://github.com/vanillacake369/agent-collab",
   "license": "MIT",
-  "keywords": ["collaboration", "multi-agent", "context-sharing", "p2p"]
+  "keywords": ["collaboration", "multi-agent", "context-sharing", "p2p"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json"
 }

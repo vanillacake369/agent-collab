@@ -1,46 +1,61 @@
 ---
 name: collab-check
-description: Check cluster status and search for context shared by other agents. Use to find relevant work or verify cluster connectivity.
-allowed-tools: Bash
-user-invocable: true
-disable-model-invocation: false
+description: Use when user says "check cluster", "누가 작업중", "what's happening", "클러스터 상태", "find context", "search for", "컨텍스트 검색", "who is working on", "락 확인", "list locks", or wants to see cluster status and search for context shared by other agents.
+version: 1.0.0
 ---
 
 # Check Cluster and Search Context
 
 Check the cluster status and search for context shared by other agents.
 
-## Usage
+## When to Use
 
-```
-/collab-check                    # Check cluster status only
-/collab-check <search query>     # Search for related context
-```
+- When user asks about cluster status
+- When searching for related work by other agents
+- When checking who is working on what
+- When looking for specific context or information
 
-## Steps
+## Workflow
 
-1. **Check cluster status**:
-```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"cluster_status","arguments":{}}}' | agent-collab mcp serve 2>/dev/null
-```
-
-2. **Search for context** (if query provided):
-```bash
-echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_similar","arguments":{"query":"$ARGUMENTS","limit":10}}}' | agent-collab mcp serve 2>/dev/null
+### Step 1: Check Cluster Status
+```json
+{"name": "cluster_status", "arguments": {}}
 ```
 
-## Output
+### Step 2: List Active Locks
+```json
+{"name": "list_locks", "arguments": {}}
+```
 
-Report:
-- Cluster connection status (running, peer count)
-- Project name
-- Search results with relevance scores
-- Source of each result (which agent shared it)
+### Step 3: Search for Context (if query provided)
+```json
+{"name": "search_similar", "arguments": {"query": "<user's query>", "limit": 10}}
+```
 
-## Tips
+## Output Format
 
-Search queries that work well:
-- File names: "auth.go", "database connection"
-- Function names: "Login", "HashPassword"
+```
+## Cluster Status
+- Status: Connected/Disconnected
+- Peers: N agents online
+- Node ID: xxx
+
+## Active Locks
+| File | Agent | Intention | Duration |
+|------|-------|-----------|----------|
+| auth/handler.go | Agent-A | JWT validation | 5m |
+
+## Search Results (if query provided)
+| Relevance | File | Summary | Agent |
+|-----------|------|---------|-------|
+| 0.95 | auth/jwt.go | JWT token validation | Agent-A |
+| 0.82 | api/middleware.go | Auth middleware | Agent-B |
+```
+
+## Search Tips
+
+Effective search queries:
+- File names: "auth.go", "database"
+- Function names: "Login", "ValidateToken"
 - Concepts: "authentication", "error handling"
-- Keywords from error messages or requirements
+- Korean: "인증", "데이터베이스"
