@@ -1,0 +1,25 @@
+# Gitleaks configuration
+# https://github.com/gitleaks/gitleaks
+
+title = "agent-collab gitleaks config"
+
+[allowlist]
+  description = "Allowlisted files and patterns"
+
+  # Example tokens in documentation (not real secrets)
+  commits = [
+    "0b846280da0128c8cab430c65bbc15dd60c22bfc"  # docs with example JWT tokens
+  ]
+
+  # Paths that may contain example/placeholder tokens
+  paths = [
+    '''docs/.*\.md$''',
+    '''test-workspace/.*'''
+  ]
+
+  # Patterns that are false positives (example/placeholder tokens)
+  regexes = [
+    '''eyJjbHVzdGVyIjoibXktZmlyc3Q''',  # Example invite token in docs
+    '''<your-.*-token>''',               # Placeholder patterns
+    '''<your-.*-key>'''
+  ]
