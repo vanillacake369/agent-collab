@@ -18,6 +18,7 @@ import (
 	"agent-collab/src/infrastructure/network/wireguard"
 	"agent-collab/src/infrastructure/storage/metrics"
 	"agent-collab/src/infrastructure/storage/vector"
+	"agent-collab/src/pkg/logging"
 
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -27,6 +28,9 @@ import (
 // App is the main application orchestrator.
 type App struct {
 	mu sync.RWMutex
+
+	// Logging
+	logger *logging.Logger
 
 	// Configuration
 	config *Config
@@ -90,9 +94,15 @@ func DefaultWireGuardConfig() *WireGuardConfig {
 
 // DefaultConfig는 기본 설정을 반환합니다.
 func DefaultConfig() *Config {
-	home, _ := os.UserHomeDir()
+	// Check environment variable first (for Docker/container use)
+	dataDir := os.Getenv("AGENT_COLLAB_DATA_DIR")
+	if dataDir == "" {
+		home, _ := os.UserHomeDir()
+		dataDir = filepath.Join(home, ".agent-collab")
+	}
+
 	return &Config{
-		DataDir:    filepath.Join(home, ".agent-collab"),
+		DataDir:    dataDir,
 		ListenPort: 0, // 자동 할당
 		Bootstrap:  []string{},
 	}
@@ -109,8 +119,12 @@ func New(cfg *Config) (*App, error) {
 		return nil, fmt.Errorf("failed to create data dir: %w", err)
 	}
 
+	// Initialize structured logger
+	logger := logging.New(os.Stdout, "info").Component("app")
+
 	return &App{
 		config: cfg,
+		logger: logger,
 	}, nil
 }
 
@@ -423,7 +437,7 @@ func (a *App) Join(ctx context.Context, tokenStr string) (*JoinResult, error) {
 	if hasWireGuard && token.WireGuard != nil {
 		if err := a.joinWithWireGuard(ctx, token.WireGuard); err != nil {
 			// Log warning but continue with libp2p-only mode
-			fmt.Printf("Warning: WireGuard setup failed, using libp2p only: %v\n", err)
+			a.logger.Warn("WireGuard setup failed, using libp2p only", "error", err)
 		}
 	}
 
@@ -473,7 +487,7 @@ func (a *App) Join(ctx context.Context, tokenStr string) (*JoinResult, error) {
 
 	// 8. Perform bootstrap
 	if err := a.node.Bootstrap(ctx, bootstrapPeers); err != nil {
-		fmt.Printf("Bootstrap warning: %v\n", err)
+		a.logger.Warn("bootstrap encountered issues", "error", err)
 	}
 
 	// 9. Save listen addresses and bootstrap info to config
@@ -487,7 +501,7 @@ func (a *App) Join(ctx context.Context, tokenStr string) (*JoinResult, error) {
 
 	// Save config for daemon to load later
 	if err := a.saveConfig(); err != nil {
-		fmt.Printf("Warning: failed to save config: %v\n", err)
+		a.logger.Warn("failed to save config", "error", err)
 	}
 
 	result := &JoinResult{
@@ -551,7 +565,7 @@ func (a *App) joinWithWireGuard(ctx context.Context, wgInfo *crypto.WireGuardInf
 	// Save WireGuard config
 	wgConfigPath := filepath.Join(a.config.DataDir, "wireguard.json")
 	if err := wireguard.SaveConfigFile(mgr.GetConfig().ToConfigFile(), wgConfigPath); err != nil {
-		fmt.Printf("Warning: failed to save WireGuard config: %v\n", err)
+		a.logger.Warn("failed to save WireGuard config", "error", err)
 	}
 
 	return nil
@@ -595,7 +609,7 @@ func (a *App) Start() error {
 				}}
 				go func() {
 					if err := a.node.Bootstrap(ctx, bootstrapPeers); err != nil {
-						fmt.Printf("Bootstrap warning: %v\n", err)
+						a.logger.Warn("bootstrap encountered issues", "error", err)
 					}
 				}()
 			}
@@ -657,7 +671,7 @@ func (a *App) Stop() error {
 	// Stop WireGuard VPN
 	if a.wgManager != nil {
 		if err := a.wgManager.Stop(); err != nil {
-			fmt.Printf("Warning: failed to stop WireGuard: %v\n", err)
+			a.logger.Warn("failed to stop WireGuard", "error", err)
 		}
 	}
 
@@ -692,15 +706,17 @@ func (a *App) setupMessageHandlers() {
 	})
 
 	// 충돌 핸들러 설정
+	conflictLog := a.logger.Component("conflict")
 	a.lockService.SetConflictHandler(func(conflict *lock.LockConflict) error {
-		fmt.Printf("Lock conflict detected: %s vs %s\n",
-			conflict.RequestedLock.HolderName,
-			conflict.ConflictingLock.HolderName)
+		conflictLog.Warn("lock conflict detected",
+			"requested_by", conflict.RequestedLock.HolderName,
+			"conflicting_with", conflict.ConflictingLock.HolderName,
+			"overlap_type", conflict.OverlapType)
 		return nil
 	})
 
 	a.syncManager.SetConflictHandler(func(conflict *ctxsync.Conflict) error {
-		fmt.Printf("Concurrent modification conflict: %s\n", conflict.FilePath)
+		conflictLog.Warn("concurrent modification conflict", "file_path", conflict.FilePath)
 		return nil
 	})
 }
@@ -730,10 +746,11 @@ type ReleaseMessageWrapper struct {
 
 // processLockMessages processes incoming lock messages from P2P network.
 func (a *App) processLockMessages(ctx context.Context) {
+	log := a.logger.Component("lock-processor")
 	topicName := "/agent-collab/" + a.config.ProjectName + "/lock"
 	sub := a.node.GetSubscription(topicName)
 	if sub == nil {
-		fmt.Printf("No subscription for topic: %s\n", topicName)
+		log.Warn("no subscription for topic", "topic", topicName)
 		return
 	}
 
@@ -743,7 +760,7 @@ func (a *App) processLockMessages(ctx context.Context) {
 			if ctx.Err() != nil {
 				return // Context cancelled, graceful shutdown
 			}
-			fmt.Printf("Error receiving lock message: %v\n", err)
+			log.Error("failed to receive lock message", "error", err)
 			continue
 		}
 
@@ -762,7 +779,7 @@ func (a *App) processLockMessages(ctx context.Context) {
 		// Handle batch or single message
 		messages, err := libp2p.UnbatchMessage(data)
 		if err != nil {
-			fmt.Printf("Error unbatching lock message: %v\n", err)
+			log.Error("failed to unbatch lock message", "error", err)
 			continue
 		}
 
@@ -774,9 +791,11 @@ func (a *App) processLockMessages(ctx context.Context) {
 
 // handleSingleLockMessage processes a single lock message
 func (a *App) handleSingleLockMessage(data []byte) {
+	log := a.logger.Component("lock-handler")
+
 	var baseMsg LockMessageBase
 	if err := json.Unmarshal(data, &baseMsg); err != nil {
-		fmt.Printf("Error unmarshaling lock message type: %v\n", err)
+		log.Error("failed to unmarshal lock message type", "error", err)
 		return
 	}
 
@@ -784,43 +803,43 @@ func (a *App) handleSingleLockMessage(data []byte) {
 	case "lock_intent":
 		var intentMsg IntentMessageWrapper
 		if err := json.Unmarshal(data, &intentMsg); err != nil {
-			fmt.Printf("Error unmarshaling lock intent: %v\n", err)
+			log.Error("failed to unmarshal lock intent", "error", err)
 			return
 		}
 		if intentMsg.Intent == nil {
-			fmt.Printf("Received lock_intent with nil intent\n")
+			log.Warn("received lock_intent with nil intent")
 			return
 		}
 		if err := a.lockService.HandleRemoteLockIntent(intentMsg.Intent); err != nil {
-			fmt.Printf("Error handling lock intent: %v\n", err)
+			log.Error("failed to handle lock intent", "error", err)
 		}
 
 	case "lock_acquired":
 		var acquireMsg AcquireMessageWrapper
 		if err := json.Unmarshal(data, &acquireMsg); err != nil {
-			fmt.Printf("Error unmarshaling acquired lock: %v\n", err)
+			log.Error("failed to unmarshal acquired lock", "error", err)
 			return
 		}
 		if acquireMsg.Lock == nil {
-			fmt.Printf("Received lock_acquired with nil lock\n")
+			log.Warn("received lock_acquired with nil lock")
 			return
 		}
 		if err := a.lockService.HandleRemoteLockAcquired(acquireMsg.Lock); err != nil {
-			fmt.Printf("Error handling lock acquired: %v\n", err)
+			log.Error("failed to handle lock acquired", "error", err)
 		}
 
 	case "lock_released":
 		var releaseMsg ReleaseMessageWrapper
 		if err := json.Unmarshal(data, &releaseMsg); err != nil {
-			fmt.Printf("Error unmarshaling lock release: %v\n", err)
+			log.Error("failed to unmarshal lock release", "error", err)
 			return
 		}
 		if err := a.lockService.HandleRemoteLockReleased(releaseMsg.LockID); err != nil {
-			fmt.Printf("Error handling lock released: %v\n", err)
+			log.Error("failed to handle lock released", "error", err)
 		}
 
 	default:
-		fmt.Printf("Unknown lock message type: %s\n", baseMsg.Type)
+		log.Warn("unknown lock message type", "type", baseMsg.Type)
 	}
 }
 
@@ -831,10 +850,11 @@ type ContextMessageBase struct {
 
 // processContextMessages processes incoming context sync messages from P2P network.
 func (a *App) processContextMessages(ctx context.Context) {
+	log := a.logger.Component("context-processor")
 	topicName := "/agent-collab/" + a.config.ProjectName + "/context"
 	sub := a.node.GetSubscription(topicName)
 	if sub == nil {
-		fmt.Printf("No subscription for topic: %s\n", topicName)
+		log.Warn("no subscription for topic", "topic", topicName)
 		return
 	}
 
@@ -844,7 +864,7 @@ func (a *App) processContextMessages(ctx context.Context) {
 			if ctx.Err() != nil {
 				return // Context cancelled, graceful shutdown
 			}
-			fmt.Printf("Error receiving context message: %v\n", err)
+			log.Error("failed to receive context message", "error", err)
 			continue
 		}
 
@@ -863,7 +883,7 @@ func (a *App) processContextMessages(ctx context.Context) {
 		// Handle batch or single message
 		messages, err := libp2p.UnbatchMessage(data)
 		if err != nil {
-			fmt.Printf("Error unbatching context message: %v\n", err)
+			log.Error("failed to unbatch context message", "error", err)
 			continue
 		}
 
@@ -875,9 +895,11 @@ func (a *App) processContextMessages(ctx context.Context) {
 
 // handleSingleContextMessage processes a single context message
 func (a *App) handleSingleContextMessage(ctx context.Context, data []byte) {
+	log := a.logger.Component("context-handler")
+
 	var baseMsg ContextMessageBase
 	if err := json.Unmarshal(data, &baseMsg); err != nil {
-		fmt.Printf("Error unmarshaling context message type: %v\n", err)
+		log.Error("failed to unmarshal context message type", "error", err)
 		return
 	}
 
@@ -886,7 +908,7 @@ func (a *App) handleSingleContextMessage(ctx context.Context, data []byte) {
 		// Handle shared context from peers
 		var ctxMsg ContextMessage
 		if err := json.Unmarshal(data, &ctxMsg); err != nil {
-			fmt.Printf("Error unmarshaling shared context: %v\n", err)
+			log.Error("failed to unmarshal shared context", "error", err)
 			return
 		}
 		a.handleSharedContext(ctx, &ctxMsg)
@@ -895,12 +917,12 @@ func (a *App) handleSingleContextMessage(ctx context.Context, data []byte) {
 		// Assume it's a Delta message (for backward compatibility)
 		var delta ctxsync.Delta
 		if err := json.Unmarshal(data, &delta); err != nil {
-			fmt.Printf("Error unmarshaling delta: %v\n", err)
+			log.Error("failed to unmarshal delta", "error", err)
 			return
 		}
 
 		if err := a.syncManager.ReceiveDelta(&delta); err != nil {
-			fmt.Printf("Error handling delta: %v\n", err)
+			log.Error("failed to handle delta", "error", err)
 		}
 
 		// Also store in VectorDB if it's a file change with content
@@ -910,6 +932,8 @@ func (a *App) handleSingleContextMessage(ctx context.Context, data []byte) {
 
 // handleSharedContext processes shared context from a peer and stores it in VectorDB.
 func (a *App) handleSharedContext(ctx context.Context, msg *ContextMessage) {
+	log := a.logger.Component("context-handler")
+
 	if a.vectorStore == nil {
 		return
 	}
@@ -920,7 +944,7 @@ func (a *App) handleSharedContext(ctx context.Context, msg *ContextMessage) {
 		var err error
 		embedding, err = a.embedService.Embed(ctx, msg.Content)
 		if err != nil {
-			fmt.Printf("Error generating embedding for shared context: %v\n", err)
+			log.Error("failed to generate embedding for shared context", "error", err)
 			return
 		}
 	}
@@ -939,22 +963,24 @@ func (a *App) handleSharedContext(ctx context.Context, msg *ContextMessage) {
 	doc.Metadata["type"] = "shared_context"
 
 	if err := a.vectorStore.Insert(doc); err != nil {
-		fmt.Printf("Error storing shared context in VectorDB: %v\n", err)
+		log.Error("failed to store shared context in VectorDB", "error", err)
 		return
 	}
 
 	// Async flush
 	go func() {
 		if err := a.vectorStore.Flush(); err != nil {
-			fmt.Printf("Error flushing VectorDB: %v\n", err)
+			log.Error("failed to flush VectorDB", "error", err)
 		}
 	}()
 
-	fmt.Printf("Received shared context from %s: %s\n", msg.SourceID, msg.FilePath)
+	log.Info("received shared context", "source_id", msg.SourceID, "file_path", msg.FilePath)
 }
 
 // storeDeltaInVectorDB stores delta content in VectorDB for search.
 func (a *App) storeDeltaInVectorDB(ctx context.Context, delta *ctxsync.Delta) {
+	log := a.logger.Component("vector-store")
+
 	if a.vectorStore == nil || a.embedService == nil {
 		return
 	}
@@ -981,7 +1007,7 @@ func (a *App) storeDeltaInVectorDB(ctx context.Context, delta *ctxsync.Delta) {
 	// Generate embedding
 	embedding, err := a.embedService.Embed(ctx, content)
 	if err != nil {
-		fmt.Printf("Error generating embedding for delta: %v\n", err)
+		log.Error("failed to generate embedding for delta", "error", err, "file_path", delta.Payload.FilePath)
 		return
 	}
 
@@ -1000,14 +1026,14 @@ func (a *App) storeDeltaInVectorDB(ctx context.Context, delta *ctxsync.Delta) {
 	}
 
 	if err := a.vectorStore.Insert(doc); err != nil {
-		fmt.Printf("Error storing delta in VectorDB: %v\n", err)
+		log.Error("failed to store delta in VectorDB", "error", err, "file_path", delta.Payload.FilePath)
 		return
 	}
 
 	// Async flush to avoid blocking
 	go func() {
 		if err := a.vectorStore.Flush(); err != nil {
-			fmt.Printf("Error flushing VectorDB: %v\n", err)
+			log.Error("failed to flush VectorDB", "error", err)
 		}
 	}()
 }
