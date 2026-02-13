@@ -33,5 +33,7 @@ func (v *LocksView) SetSize(width, height int) {
 
 // SetLocks는 락 목록을 설정합니다.
 func (v *LocksView) SetLocks(locks interface{}) {
-	// TODO: 타입 어설션
+	if l, ok := locks.([]LockInfo); ok {
+		v.locks = l
+	}
 }

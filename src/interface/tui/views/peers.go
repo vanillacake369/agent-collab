@@ -38,7 +38,9 @@ func (v *PeersView) SetSize(width, height int) {
 
 // SetPeers는 피어 목록을 설정합니다.
 func (v *PeersView) SetPeers(peers interface{}) {
-	// TODO: 타입 어설션
+	if p, ok := peers.([]PeerInfo); ok {
+		v.peers = p
+	}
 }
 
 // SelectedPeer는 선택된 피어를 반환합니다.

@@ -38,9 +38,32 @@ func (v *TokensView) SetSize(width, height int) {
 	v.height = height
 }
 
+// TokensData는 토큰 데이터입니다.
+type TokensData struct {
+	TodayUsed   int64
+	DailyLimit  int64
+	Breakdown   []TokenBreakdown
+	HourlyData  []float64
+	CostToday   float64
+	CostWeek    float64
+	CostMonth   float64
+	TokensWeek  int64
+	TokensMonth int64
+}
+
 // SetData는 데이터를 설정합니다.
 func (v *TokensView) SetData(data interface{}) {
-	// TODO: 타입 어설션
+	if d, ok := data.(TokensData); ok {
+		v.todayUsed = d.TodayUsed
+		v.dailyLimit = d.DailyLimit
+		v.breakdown = d.Breakdown
+		v.hourlyData = d.HourlyData
+		v.costToday = d.CostToday
+		v.costWeek = d.CostWeek
+		v.costMonth = d.CostMonth
+		v.tokensWeek = d.TokensWeek
+		v.tokensMonth = d.TokensMonth
+	}
 }
 
 // UsagePercent는 사용률을 반환합니다.

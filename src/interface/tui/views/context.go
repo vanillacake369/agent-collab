@@ -46,5 +46,11 @@ type ContextData struct {
 }
 
 func (v *ContextView) SetData(data interface{}) {
-	// TODO: 타입 어설션
+	if d, ok := data.(ContextData); ok {
+		v.totalEmbeddings = d.TotalEmbeddings
+		v.databaseSize = d.DatabaseSize
+		v.syncProgress = d.SyncProgress
+		v.recentDeltas = d.RecentDeltas
+		v.lastUpdated = time.Now()
+	}
 }

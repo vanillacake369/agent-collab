@@ -218,11 +218,17 @@ func (m Model) fetchInitialData() tea.Cmd {
 				}
 			}
 
+			// Sync health: 데몬 연결 성공 시 100%, 피어가 없으면 동기화 대상 없음으로 100%
+			syncHealth := 100.0
+			if status.PeerCount == 0 {
+				syncHealth = 100.0 // 피어 없음 = 동기화 불필요
+			}
+
 			return InitialDataMsg{
 				ProjectName: status.ProjectName,
 				NodeID:      status.NodeID,
 				PeerCount:   status.PeerCount,
-				SyncHealth:  100, // TODO: 실제 sync health 계산
+				SyncHealth:  syncHealth,
 			}
 		},
 		m.fetchPeers(),
