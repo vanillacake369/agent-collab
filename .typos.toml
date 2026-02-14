@@ -11,6 +11,8 @@ extend-ignore-re = [
 tha = "tha"
 # Technical acronyms
 Pn = "Pn"  # UPnP (Universal Plug and Play)
+# Windows command flags
+FO = "FO"  # tasklist /FO (Format Output)
 
 [files]
 extend-exclude = [

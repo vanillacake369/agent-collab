@@ -49,7 +49,10 @@ var daemonRunCmd = &cobra.Command{
 	RunE:   runDaemonRun,
 }
 
-var daemonForeground bool
+var (
+	daemonForeground bool
+	daemonStopAll    bool
+)
 
 func init() {
 	rootCmd.AddCommand(daemonCmd)
@@ -60,6 +63,7 @@ func init() {
 	daemonCmd.AddCommand(daemonRunCmd)
 
 	daemonStartCmd.Flags().BoolVarP(&daemonForeground, "foreground", "f", false, "포그라운드에서 실행")
+	daemonStopCmd.Flags().BoolVar(&daemonStopAll, "all", false, "모든 agent-collab 데몬 프로세스 종료")
 }
 
 // ensureDaemonRunning checks if daemon is running and starts it if not.
@@ -151,6 +155,11 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 }
 
 func runDaemonStop(cmd *cobra.Command, args []string) error {
+	// --all 플래그: 모든 agent-collab 데몬 프로세스 종료
+	if daemonStopAll {
+		return stopAllDaemons()
+	}
+
 	client := daemon.NewClient()
 
 	if !client.IsRunning() {

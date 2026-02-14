@@ -2,7 +2,10 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -36,6 +39,7 @@ var (
 	wgPort          int
 	wgSubnet        string
 	initForeground  bool
+	initForce       bool
 )
 
 func init() {
@@ -51,11 +55,19 @@ func init() {
 
 	// Foreground flag
 	initCmd.Flags().BoolVarP(&initForeground, "foreground", "f", false, "포그라운드에서 실행 (데몬 없이)")
+
+	// Force flag
+	initCmd.Flags().BoolVar(&initForce, "force", false, "기존 클러스터가 있어도 강제로 재초기화")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
 	// init은 데몬 없이 직접 초기화를 수행합니다.
 	// 초기화 후 config.json이 생성되면 데몬을 시작합니다.
+
+	// 기존 클러스터 존재 여부 확인
+	if err := checkExistingClusterWithForce(projectName, initForce); err != nil {
+		return err
+	}
 
 	// WireGuard 지원 여부 확인
 	if enableWireGuard {
@@ -183,4 +195,62 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("데몬 중지: agent-collab daemon stop")
 
 	return nil
+}
+
+// existingConfig는 기존 config.json의 최소 정보를 담는 구조체입니다.
+type existingConfig struct {
+	ProjectName string `json:"project_name"`
+}
+
+// checkExistingCluster는 기존 클러스터가 존재하는지 확인합니다.
+func checkExistingCluster(projectName string) error {
+	return checkExistingClusterWithForce(projectName, false)
+}
+
+// checkExistingClusterWithForce는 기존 클러스터 존재 여부를 확인하고,
+// force가 true면 기존 클러스터가 있어도 에러를 반환하지 않습니다.
+func checkExistingClusterWithForce(projectName string, force bool) error {
+	dataDir := getInitDataDir()
+	configPath := filepath.Join(dataDir, "config.json")
+
+	// config.json이 없으면 신규 초기화 가능
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return nil
+	}
+
+	// config.json 읽기
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		// 읽기 실패 = 손상된 파일, 덮어쓰기 허용
+		return nil
+	}
+
+	// JSON 파싱
+	var existing existingConfig
+	if err := json.Unmarshal(data, &existing); err != nil {
+		// 파싱 실패 = 손상된 JSON, 덮어쓰기 허용
+		return nil
+	}
+
+	// force 플래그가 있으면 무조건 허용
+	if force {
+		return nil
+	}
+
+	// 동일 프로젝트명
+	if existing.ProjectName == projectName {
+		return fmt.Errorf("클러스터 '%s'가 이미 존재합니다. 재초기화하려면 --force 플래그를 사용하세요", projectName)
+	}
+
+	// 다른 프로젝트명
+	return fmt.Errorf("다른 클러스터 '%s'가 존재합니다. 덮어쓰려면 --force 플래그를 사용하세요", existing.ProjectName)
+}
+
+// getInitDataDir는 데이터 디렉토리 경로를 반환합니다 (init용).
+func getInitDataDir() string {
+	if dir := os.Getenv("AGENT_COLLAB_DATA_DIR"); dir != "" {
+		return dir
+	}
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".agent-collab")
 }

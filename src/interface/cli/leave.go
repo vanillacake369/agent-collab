@@ -25,6 +25,7 @@ var leaveCmd = &cobra.Command{
 var (
 	leaveForce bool
 	leaveClean bool
+	leaveReset bool
 )
 
 func init() {
@@ -32,6 +33,7 @@ func init() {
 
 	leaveCmd.Flags().BoolVarP(&leaveForce, "force", "f", false, "강제 탈퇴 (확인 없이)")
 	leaveCmd.Flags().BoolVar(&leaveClean, "clean", false, "로컬 데이터도 삭제")
+	leaveCmd.Flags().BoolVar(&leaveReset, "reset", false, "모든 클러스터 데이터 삭제 (config, keys 포함)")
 }
 
 func runLeave(cmd *cobra.Command, args []string) error {
@@ -76,21 +78,53 @@ func runLeave(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println("✓ Peer 연결 종료")
 
-	if leaveClean {
-		cfg := app.Config()
-		if cfg != nil && cfg.DataDir != "" {
-			if err := os.RemoveAll(filepath.Join(cfg.DataDir, "vectors")); err == nil {
-				fmt.Println("✓ 벡터 데이터 삭제 완료")
+	// 데이터 정리
+	cfg := app.Config()
+	if cfg != nil && cfg.DataDir != "" {
+		if leaveReset {
+			// --reset: 모든 데이터 삭제
+			if err := cleanupClusterData(cfg.DataDir, true); err != nil {
+				fmt.Printf("⚠️  데이터 정리 중 오류: %v\n", err)
+			} else {
+				fmt.Println("✓ 모든 클러스터 데이터 삭제 완료")
 			}
-			if err := os.RemoveAll(filepath.Join(cfg.DataDir, "metrics")); err == nil {
-				fmt.Println("✓ 메트릭 데이터 삭제 완료")
+		} else if leaveClean {
+			// --clean: 벡터/메트릭만 삭제
+			if err := cleanupClusterData(cfg.DataDir, false); err != nil {
+				fmt.Printf("⚠️  데이터 정리 중 오류: %v\n", err)
+			} else {
+				fmt.Println("✓ 벡터/메트릭 데이터 삭제 완료")
 			}
 		}
 	}
 
 	fmt.Println()
 	fmt.Println("클러스터에서 탈퇴했습니다.")
-	fmt.Println("다시 참여하려면 'agent-collab join <token>'을 사용하세요.")
+	if leaveReset {
+		fmt.Println("새 클러스터를 시작하려면 'agent-collab init -p <project>'를 사용하세요.")
+	} else {
+		fmt.Println("다시 참여하려면 'agent-collab join <token>'을 사용하세요.")
+	}
+
+	return nil
+}
+
+// cleanupClusterData는 클러스터 데이터를 정리합니다.
+// reset=true면 config, key 포함 모든 데이터를 삭제합니다.
+// reset=false면 vectors, metrics만 삭제합니다.
+func cleanupClusterData(dataDir string, reset bool) error {
+	// 항상 삭제: vectors, metrics
+	os.RemoveAll(filepath.Join(dataDir, "vectors"))
+	os.RemoveAll(filepath.Join(dataDir, "metrics"))
+
+	if reset {
+		// reset=true: config, key, wireguard, daemon 파일도 삭제
+		os.Remove(filepath.Join(dataDir, "config.json"))
+		os.Remove(filepath.Join(dataDir, "key.json"))
+		os.Remove(filepath.Join(dataDir, "wireguard.json"))
+		os.Remove(filepath.Join(dataDir, "daemon.pid"))
+		os.Remove(filepath.Join(dataDir, "daemon.sock"))
+	}
 
 	return nil
 }
