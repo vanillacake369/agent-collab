@@ -5,61 +5,32 @@ import (
 	"testing"
 	"time"
 
-	"agent-collab/src/infrastructure/embedding"
-	"agent-collab/src/infrastructure/storage/vector"
+	"agent-collab/src/domain/ports"
 )
 
-// mockVectorStore implements vector.Store for testing.
-type mockVectorStore struct {
-	documents []*vector.Document
+// mockVectorSearcher implements ports.VectorSearcher for testing.
+type mockVectorSearcher struct {
+	documents []*ports.VectorDocument
 }
 
-func newMockVectorStore() *mockVectorStore {
-	return &mockVectorStore{
-		documents: make([]*vector.Document, 0),
+func newMockVectorSearcher() *mockVectorSearcher {
+	return &mockVectorSearcher{
+		documents: make([]*ports.VectorDocument, 0),
 	}
 }
 
-func (m *mockVectorStore) CreateCollection(name string, dimension int) error { return nil }
-func (m *mockVectorStore) DeleteCollection(name string) error                { return nil }
-func (m *mockVectorStore) ListCollections() ([]string, error)                { return []string{"default"}, nil }
-func (m *mockVectorStore) GetCollectionStats(name string) (*vector.CollectionStats, error) {
-	return &vector.CollectionStats{Name: name}, nil
-}
-
-func (m *mockVectorStore) Insert(doc *vector.Document) error {
+// Insert adds a document for testing (not part of VectorSearcher interface).
+func (m *mockVectorSearcher) Insert(doc *ports.VectorDocument) {
 	doc.ID = "doc-" + doc.Content[:min(8, len(doc.Content))]
 	doc.CreatedAt = time.Now()
 	m.documents = append(m.documents, doc)
-	return nil
 }
 
-func (m *mockVectorStore) InsertBatch(docs []*vector.Document) error {
-	for _, doc := range docs {
-		m.Insert(doc)
-	}
-	return nil
-}
-
-func (m *mockVectorStore) Get(collection, id string) (*vector.Document, error) {
-	for _, doc := range m.documents {
-		if doc.ID == id {
-			return doc, nil
-		}
-	}
-	return nil, nil
-}
-
-func (m *mockVectorStore) Delete(collection, id string) error { return nil }
-func (m *mockVectorStore) DeleteByFilter(collection string, filter map[string]any) (int64, error) {
-	return 0, nil
-}
-
-func (m *mockVectorStore) Search(emb []float32, opts *vector.SearchOptions) ([]*vector.SearchResult, error) {
-	results := make([]*vector.SearchResult, 0)
+func (m *mockVectorSearcher) Search(emb []float32, opts *ports.VectorSearchOptions) ([]*ports.VectorSearchResult, error) {
+	results := make([]*ports.VectorSearchResult, 0)
 	for _, doc := range m.documents {
 		// Simple mock: return all documents with fake similarity scores
-		results = append(results, &vector.SearchResult{
+		results = append(results, &ports.VectorSearchResult{
 			Document: doc,
 			Score:    0.8, // Default high similarity
 		})
@@ -70,12 +41,42 @@ func (m *mockVectorStore) Search(emb []float32, opts *vector.SearchOptions) ([]*
 	return results, nil
 }
 
-func (m *mockVectorStore) SearchByText(text string, opts *vector.SearchOptions) ([]*vector.SearchResult, error) {
+func (m *mockVectorSearcher) SearchByText(text string, opts *ports.VectorSearchOptions) ([]*ports.VectorSearchResult, error) {
 	return m.Search(nil, opts)
 }
 
-func (m *mockVectorStore) Flush() error { return nil }
-func (m *mockVectorStore) Close() error { return nil }
+// mockEmbeddingService implements ports.EmbeddingService for testing.
+type mockEmbeddingService struct {
+	dimension int
+}
+
+func newMockEmbeddingService() *mockEmbeddingService {
+	return &mockEmbeddingService{dimension: 1536}
+}
+
+func (m *mockEmbeddingService) Embed(ctx context.Context, text string) ([]float32, error) {
+	// Return a simple mock embedding
+	embedding := make([]float32, m.dimension)
+	for i := range embedding {
+		embedding[i] = 0.1
+	}
+	return embedding, nil
+}
+
+func (m *mockEmbeddingService) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
+	results := make([][]float32, len(texts))
+	for i := range texts {
+		emb, err := m.Embed(ctx, texts[i])
+		if err != nil {
+			return nil, err
+		}
+		results[i] = emb
+	}
+	return results, nil
+}
+
+func (m *mockEmbeddingService) Dimension() int { return m.dimension }
+func (m *mockEmbeddingService) Model() string  { return "mock-model" }
 
 func min(a, b int) int {
 	if a < b {
@@ -86,10 +87,8 @@ func min(a, b int) int {
 
 // TestCheckBefore_NoPreviousContext tests cohesion check when no context exists.
 func TestCheckBefore_NoPreviousContext(t *testing.T) {
-	store := newMockVectorStore()
-	embedService := embedding.NewService(&embedding.Config{
-		Provider: embedding.ProviderMock,
-	})
+	store := newMockVectorSearcher()
+	embedService := newMockEmbeddingService()
 
 	checker := NewChecker(store, embedService)
 
@@ -113,13 +112,11 @@ func TestCheckBefore_NoPreviousContext(t *testing.T) {
 
 // TestCheckBefore_WithRelatedContext tests cohesion check when related context exists.
 func TestCheckBefore_WithRelatedContext(t *testing.T) {
-	store := newMockVectorStore()
-	embedService := embedding.NewService(&embedding.Config{
-		Provider: embedding.ProviderMock,
-	})
+	store := newMockVectorSearcher()
+	embedService := newMockEmbeddingService()
 
 	// Add existing context
-	store.Insert(&vector.Document{
+	store.Insert(&ports.VectorDocument{
 		Content:  "Implemented JWT token validation with expiry checking",
 		FilePath: "auth/handler.go",
 		Metadata: map[string]any{"agent": "Agent-A"},
@@ -148,13 +145,11 @@ func TestCheckBefore_WithRelatedContext(t *testing.T) {
 
 // TestCheckBefore_ConflictingApproach tests detection of conflicting approaches.
 func TestCheckBefore_ConflictingApproach(t *testing.T) {
-	store := newMockVectorStore()
-	embedService := embedding.NewService(&embedding.Config{
-		Provider: embedding.ProviderMock,
-	})
+	store := newMockVectorSearcher()
+	embedService := newMockEmbeddingService()
 
 	// Add existing context about JWT
-	store.Insert(&vector.Document{
+	store.Insert(&ports.VectorDocument{
 		Content:  "Implemented JWT-based stateless authentication",
 		FilePath: "auth/handler.go",
 	})
@@ -186,13 +181,11 @@ func TestCheckBefore_ConflictingApproach(t *testing.T) {
 
 // TestCheckAfter_WithResult tests after-work cohesion check.
 func TestCheckAfter_WithResult(t *testing.T) {
-	store := newMockVectorStore()
-	embedService := embedding.NewService(&embedding.Config{
-		Provider: embedding.ProviderMock,
-	})
+	store := newMockVectorSearcher()
+	embedService := newMockEmbeddingService()
 
 	// Add existing context
-	store.Insert(&vector.Document{
+	store.Insert(&ports.VectorDocument{
 		Content:  "API uses REST endpoints with JSON responses",
 		FilePath: "api/routes.go",
 	})
@@ -217,13 +210,11 @@ func TestCheckAfter_WithResult(t *testing.T) {
 
 // TestCheckAfter_ConflictingChange tests detection of conflicting changes.
 func TestCheckAfter_ConflictingChange(t *testing.T) {
-	store := newMockVectorStore()
-	embedService := embedding.NewService(&embedding.Config{
-		Provider: embedding.ProviderMock,
-	})
+	store := newMockVectorSearcher()
+	embedService := newMockEmbeddingService()
 
 	// Add existing context about REST API
-	store.Insert(&vector.Document{
+	store.Insert(&ports.VectorDocument{
 		Content:  "All APIs follow REST principles with JSON",
 		FilePath: "api/routes.go",
 	})
@@ -248,10 +239,8 @@ func TestCheckAfter_ConflictingChange(t *testing.T) {
 
 // TestCheck_InvalidRequest tests error handling for invalid requests.
 func TestCheck_InvalidRequest(t *testing.T) {
-	store := newMockVectorStore()
-	embedService := embedding.NewService(&embedding.Config{
-		Provider: embedding.ProviderMock,
-	})
+	store := newMockVectorSearcher()
+	embedService := newMockEmbeddingService()
 
 	checker := NewChecker(store, embedService)
 

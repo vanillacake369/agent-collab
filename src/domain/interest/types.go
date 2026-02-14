@@ -57,9 +57,9 @@ func ParseInterestLevel(s string) InterestLevel {
 
 // Interest defines an agent's area of interest.
 type Interest struct {
-	ID        string            `json:"id"`
-	AgentID   string            `json:"agent_id"`
-	AgentName string            `json:"agent_name"`
+	ID        string `json:"id"`
+	AgentID   string `json:"agent_id"`
+	AgentName string `json:"agent_name"`
 
 	// Patterns are glob patterns for matching file paths.
 	// Examples: ["proj-a/**", "proj-b/src/*.go"]

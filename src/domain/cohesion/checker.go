@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"agent-collab/src/infrastructure/embedding"
-	"agent-collab/src/infrastructure/storage/vector"
+	"agent-collab/src/domain/ports"
 )
 
 // Thresholds for cohesion detection.
@@ -33,15 +32,15 @@ var ConflictIndicators = []string{
 
 // Checker performs cohesion checks against existing contexts.
 type Checker struct {
-	vectorStore  vector.Store
-	embedService *embedding.Service
+	vectorSearcher ports.VectorSearcher
+	embedService   ports.EmbeddingService
 }
 
 // NewChecker creates a new cohesion checker.
-func NewChecker(vectorStore vector.Store, embedService *embedding.Service) *Checker {
+func NewChecker(vectorSearcher ports.VectorSearcher, embedService ports.EmbeddingService) *Checker {
 	return &Checker{
-		vectorStore:  vectorStore,
-		embedService: embedService,
+		vectorSearcher: vectorSearcher,
+		embedService:   embedService,
 	}
 }
 
@@ -74,7 +73,7 @@ func (c *Checker) checkBefore(ctx context.Context, req *CheckRequest) (*CheckRes
 	}
 
 	// Search for related contexts
-	results, err := c.vectorStore.Search(intentionEmb, &vector.SearchOptions{
+	results, err := c.vectorSearcher.Search(intentionEmb, &ports.VectorSearchOptions{
 		Collection: "default",
 		TopK:       DefaultSearchLimit,
 	})
@@ -98,7 +97,7 @@ func (c *Checker) checkAfter(ctx context.Context, req *CheckRequest) (*CheckResu
 	}
 
 	// Search for related contexts
-	results, err := c.vectorStore.Search(resultEmb, &vector.SearchOptions{
+	results, err := c.vectorSearcher.Search(resultEmb, &ports.VectorSearchOptions{
 		Collection: "default",
 		TopK:       DefaultSearchLimit,
 	})
@@ -110,7 +109,7 @@ func (c *Checker) checkAfter(ctx context.Context, req *CheckRequest) (*CheckResu
 }
 
 // analyzeResults analyzes search results and determines cohesion.
-func (c *Checker) analyzeResults(query string, results []*vector.SearchResult) (*CheckResult, error) {
+func (c *Checker) analyzeResults(query string, results []*ports.VectorSearchResult) (*CheckResult, error) {
 	result := &CheckResult{
 		Verdict:         VerdictCohesive,
 		Confidence:      1.0,
@@ -231,7 +230,7 @@ func (c *Checker) hasConflictIndicators(query string) bool {
 }
 
 // detectConflict checks if a search result potentially conflicts with the query.
-func (c *Checker) detectConflict(query string, sr *vector.SearchResult, hasIndicator bool) *ConflictInfo {
+func (c *Checker) detectConflict(query string, sr *ports.VectorSearchResult, hasIndicator bool) *ConflictInfo {
 	if sr.Document == nil {
 		return nil
 	}

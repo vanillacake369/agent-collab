@@ -297,7 +297,7 @@ func TestFeature_MultiNodeEventSync(t *testing.T) {
 					receivedFromGemini = true
 				}
 			case <-time.After(time.Second):
-				break
+				// Timeout, continue to next iteration
 			}
 		}
 
@@ -309,7 +309,7 @@ func TestFeature_MultiNodeEventSync(t *testing.T) {
 					receivedFromClaude = true
 				}
 			case <-time.After(time.Second):
-				break
+				// Timeout, continue to next iteration
 			}
 		}
 
@@ -393,10 +393,8 @@ func TestFeature_ConcurrentEventProcessing(t *testing.T) {
 				router.Unsubscribe(agentID)
 				// Channel should be closed
 				select {
-				case _, ok := <-ch:
-					if ok {
-						// Might receive events before close, that's OK
-					}
+				case <-ch:
+					// Might receive events before close, that's OK
 				default:
 				}
 			}(i)

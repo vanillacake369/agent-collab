@@ -102,11 +102,11 @@ func TestFeature_Status_Scenario_ActiveCluster(t *testing.T) {
 		// Setup token usage handler
 		server.SetHandler("/tokens/usage", func(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(daemon.TokenUsageResponse{
-				TokensToday:  25000,
+				TokensToday:   25000,
 				TokensPerHour: 1250.0,
-				CostToday:    0.025,
-				DailyLimit:   200000,
-				UsagePercent: 12.5,
+				CostToday:     0.025,
+				DailyLimit:    200000,
+				UsagePercent:  12.5,
 			})
 		})
 

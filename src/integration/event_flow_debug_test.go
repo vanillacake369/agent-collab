@@ -139,4 +139,3 @@ func TestEventFlowDebug(t *testing.T) {
 		t.Log("FAILURE: Event flow has issues.")
 	}
 }
-

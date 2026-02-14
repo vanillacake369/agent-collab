@@ -7,8 +7,14 @@ import (
 	"time"
 
 	"agent-collab/src/domain/interest"
-	"agent-collab/src/infrastructure/storage/vector"
+	"agent-collab/src/domain/ports"
 )
+
+// RouterVectorStore combines writer and searcher for router's needs.
+type RouterVectorStore interface {
+	ports.VectorWriter
+	ports.VectorSearcher
+}
 
 // Router routes events to interested agents.
 type Router struct {
@@ -16,7 +22,7 @@ type Router struct {
 
 	interestMgr *interest.Manager
 	eventLog    *EventLog
-	vectorStore vector.Store
+	vectorStore RouterVectorStore
 	broadcast   func(topic string, data []byte) error
 	subscribers map[string][]chan *Event
 
@@ -30,7 +36,7 @@ type RouterConfig struct {
 	NodeName    string
 	MaxEvents   int
 	EventTTL    time.Duration
-	VectorStore vector.Store
+	VectorStore RouterVectorStore
 }
 
 // DefaultRouterConfig returns default router configuration.
@@ -71,7 +77,7 @@ func (r *Router) SetBroadcastFn(fn func(topic string, data []byte) error) {
 }
 
 // SetVectorStore sets the vector store for semantic search.
-func (r *Router) SetVectorStore(store vector.Store) {
+func (r *Router) SetVectorStore(store RouterVectorStore) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.vectorStore = store
@@ -104,7 +110,7 @@ func (r *Router) storeInVectorDB(event *Event) {
 		return
 	}
 
-	doc := &vector.Document{
+	doc := &ports.VectorDocument{
 		Content:   string(event.Payload),
 		Embedding: event.Embedding,
 		FilePath:  event.FilePath,
@@ -387,7 +393,7 @@ func (r *Router) SearchSimilar(ctx context.Context, query string, limit int) ([]
 		return nil, ErrVectorStoreNotConfigured
 	}
 
-	results, err := r.vectorStore.SearchByText(query, &vector.SearchOptions{TopK: limit})
+	results, err := r.vectorStore.SearchByText(query, &ports.VectorSearchOptions{TopK: limit})
 	if err != nil {
 		return nil, err
 	}
@@ -396,7 +402,7 @@ func (r *Router) SearchSimilar(ctx context.Context, query string, limit int) ([]
 }
 
 // resolveEventsFromSearchResults converts vector search results to events.
-func (r *Router) resolveEventsFromSearchResults(results []*vector.SearchResult) []*Event {
+func (r *Router) resolveEventsFromSearchResults(results []*ports.VectorSearchResult) []*Event {
 	var events []*Event
 
 	for _, result := range results {
@@ -410,7 +416,7 @@ func (r *Router) resolveEventsFromSearchResults(results []*vector.SearchResult) 
 }
 
 // extractEventFromResult extracts an event from a search result.
-func (r *Router) extractEventFromResult(result *vector.SearchResult) *Event {
+func (r *Router) extractEventFromResult(result *ports.VectorSearchResult) *Event {
 	if result == nil || result.Document == nil || result.Document.Metadata == nil {
 		return nil
 	}

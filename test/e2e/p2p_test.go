@@ -194,10 +194,10 @@ func TestP2PLockNegotiation(t *testing.T) {
 
 	// Node1 announces lock intent
 	lockIntent := struct {
-		LockName  string `json:"lockName"`
-		HolderID  string `json:"holderId"`
-		FilePath  string `json:"filePath"`
-		Intention string `json:"intention"`
+		LockName  string    `json:"lockName"`
+		HolderID  string    `json:"holderId"`
+		FilePath  string    `json:"filePath"`
+		Intention string    `json:"intention"`
 		Timestamp time.Time `json:"timestamp"`
 	}{
 		LockName:  "test-lock",

@@ -42,8 +42,8 @@ type EnhancedStatus struct {
 	*application.Status
 
 	// Extended info from daemon
-	Peers      []daemon.PeerInfo `json:"peers,omitempty"`
-	Events     []daemon.Event    `json:"events,omitempty"`
+	Peers      []daemon.PeerInfo          `json:"peers,omitempty"`
+	Events     []daemon.Event             `json:"events,omitempty"`
 	TokenUsage *daemon.TokenUsageResponse `json:"token_usage,omitempty"`
 }
 
@@ -230,7 +230,6 @@ func printEnhancedStatus(enhanced *EnhancedStatus) error {
 
 	return nil
 }
-
 
 func runStatusWatch(app *application.App) error {
 	ticker := time.NewTicker(2 * time.Second)

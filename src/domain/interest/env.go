@@ -7,8 +7,8 @@ import (
 
 // Environment variable name for interest patterns.
 const (
-	EnvInterests      = "AGENT_COLLAB_INTERESTS"
-	EnvInterestLevel  = "AGENT_COLLAB_INTEREST_LEVEL"
+	EnvInterests     = "AGENT_COLLAB_INTERESTS"
+	EnvInterestLevel = "AGENT_COLLAB_INTEREST_LEVEL"
 )
 
 // ParsePatternsFromEnv parses comma-separated interest patterns from environment variable.

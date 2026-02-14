@@ -7,6 +7,7 @@ import (
 
 	"agent-collab/src/application"
 	"agent-collab/src/domain/cohesion"
+	"agent-collab/src/infrastructure/embedding"
 	"agent-collab/src/infrastructure/storage/vector"
 )
 
@@ -364,11 +365,13 @@ func handleListAgents(ctx context.Context, app *application.App, args map[string
 }
 
 func handleCheckCohesion(ctx context.Context, app *application.App, args map[string]any) (*ToolCallResult, error) {
-	vectorStore := app.VectorStore()
-	embedService := app.EmbeddingService()
-	if vectorStore == nil || embedService == nil {
+	vs := app.VectorStore()
+	es := app.EmbeddingService()
+	if vs == nil || es == nil {
 		return textResult("Error: Vector store or embedding service not initialized"), nil
 	}
+	vectorStore := vector.NewPortsAdapter(vs)
+	embedService := embedding.NewPortsAdapter(es)
 
 	checkType, _ := args["type"].(string)
 	if checkType == "" {

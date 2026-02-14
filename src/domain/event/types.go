@@ -52,9 +52,9 @@ type Event struct {
 	Embedding []float32 `json:"embedding,omitempty"`
 
 	// Lifecycle management
-	Status    EventStatus `json:"status,omitempty"`
-	ExpiresAt time.Time   `json:"expires_at,omitempty"`
-	SupersededBy string   `json:"superseded_by,omitempty"` // ID of newer event that replaced this
+	Status       EventStatus `json:"status,omitempty"`
+	ExpiresAt    time.Time   `json:"expires_at,omitempty"`
+	SupersededBy string      `json:"superseded_by,omitempty"` // ID of newer event that replaced this
 }
 
 // DefaultEventTTL is the default time-to-live for events.
@@ -142,10 +142,10 @@ func NewFileChangeEvent(sourceID, sourceName, filePath string, payload *FileChan
 
 // LockPayload is the payload for lock events.
 type LockPayload struct {
-	LockID    string `json:"lock_id"`
-	HolderID  string `json:"holder_id"`
+	LockID     string `json:"lock_id"`
+	HolderID   string `json:"holder_id"`
 	HolderName string `json:"holder_name"`
-	Purpose   string `json:"purpose,omitempty"`
+	Purpose    string `json:"purpose,omitempty"`
 }
 
 // NewLockAcquiredEvent creates a new lock acquired event.

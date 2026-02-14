@@ -7,9 +7,9 @@ import (
 
 // EventLogConfig holds configuration for EventLog.
 type EventLogConfig struct {
-	MaxSize         int
-	EventTTL        time.Duration
-	CompactInterval time.Duration
+	MaxSize          int
+	EventTTL         time.Duration
+	CompactInterval  time.Duration
 	MaxEventsPerFile int // 0 = unlimited
 }
 
@@ -25,13 +25,13 @@ func DefaultEventLogConfig() *EventLogConfig {
 
 // EventLog stores events with indexing and lifecycle management.
 type EventLog struct {
-	mu      sync.RWMutex
-	config  *EventLogConfig
-	events  []*Event
-	byID    map[string]*Event
-	byType  map[EventType][]*Event
+	mu       sync.RWMutex
+	config   *EventLogConfig
+	events   []*Event
+	byID     map[string]*Event
+	byType   map[EventType][]*Event
 	bySource map[string][]*Event
-	byFile  map[string][]*Event // Index by file path for compaction
+	byFile   map[string][]*Event // Index by file path for compaction
 
 	stopCh chan struct{}
 }

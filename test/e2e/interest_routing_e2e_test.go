@@ -95,8 +95,8 @@ func TestRegisterInterestsFromEnvironment(t *testing.T) {
 				}
 
 				expectedPatterns := map[string]bool{
-					"user-service/**":    true,
-					"auth-lib/token.go":  true,
+					"user-service/**":   true,
+					"auth-lib/token.go": true,
 				}
 
 				for _, p := range patterns {

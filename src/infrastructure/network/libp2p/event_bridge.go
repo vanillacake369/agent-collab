@@ -241,9 +241,9 @@ func (b *EventBridge) SyncInterests(ctx context.Context) error {
 	// Create sync event
 	evt := event.NewEvent(event.EventTypeContextShared, b.node.ID().String(), "system")
 	payload := map[string]interface{}{
-		"sync_type":  "interests",
-		"interests":  snapshot,
-		"node_id":    b.node.ID().String(),
+		"sync_type": "interests",
+		"interests": snapshot,
+		"node_id":   b.node.ID().String(),
 	}
 	payloadData, err := json.Marshal(payload)
 	if err != nil {
