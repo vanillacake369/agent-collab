@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	v1 "agent-collab/src/api/v1"
 	"agent-collab/src/infrastructure/network/libp2p"
 )
 
@@ -195,18 +194,15 @@ func TestP2PLockNegotiation(t *testing.T) {
 
 	// Node1 announces lock intent
 	lockIntent := struct {
-		LockName  string        `json:"lockName"`
-		HolderID  string        `json:"holderId"`
-		Target    v1.LockTarget `json:"target"`
-		Intention string        `json:"intention"`
-		Timestamp time.Time     `json:"timestamp"`
+		LockName  string `json:"lockName"`
+		HolderID  string `json:"holderId"`
+		FilePath  string `json:"filePath"`
+		Intention string `json:"intention"`
+		Timestamp time.Time `json:"timestamp"`
 	}{
-		LockName: "test-lock",
-		HolderID: node1.ID().String(),
-		Target: v1.LockTarget{
-			Type:     v1.LockTargetTypeFile,
-			FilePath: "/path/to/file.go",
-		},
+		LockName:  "test-lock",
+		HolderID:  node1.ID().String(),
+		FilePath:  "/path/to/file.go",
 		Intention: "Editing file",
 		Timestamp: time.Now(),
 	}

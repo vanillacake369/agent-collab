@@ -25,7 +25,7 @@ ARG TARGETARCH
 # Build for the target architecture (auto-detected by Docker buildx)
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} go build \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
-    -o /app/agent-collab ./src
+    -o /app/agent-collab ./src/cmd/agent-collab
 
 # -----------------------------------------------------------------------------
 # Runtime stage with Claude Code

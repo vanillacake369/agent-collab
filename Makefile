@@ -19,11 +19,11 @@ deps:
 
 # Production build
 build:
-	CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY) ./src
+	CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY) ./src/cmd/agent-collab
 
 # Development build (fast compile)
 build-dev:
-	go build -o bin/$(BINARY) ./src
+	go build -o bin/$(BINARY) ./src/cmd/agent-collab
 
 # Run
 run: build-dev
@@ -71,11 +71,11 @@ clean:
 
 # Cross compile all platforms
 build-all:
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-darwin-amd64 ./src
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-darwin-arm64 ./src
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-linux-amd64 ./src
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-linux-arm64 ./src
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-windows-amd64.exe ./src
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-darwin-amd64 ./src/cmd/agent-collab
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-darwin-arm64 ./src/cmd/agent-collab
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-linux-amd64 ./src/cmd/agent-collab
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-linux-arm64 ./src/cmd/agent-collab
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-windows-amd64.exe ./src/cmd/agent-collab
 
 # Install locally
 install: build
@@ -170,7 +170,7 @@ install-tools:
 # Build Linux binary for Docker
 build-linux:
 	@echo "Building Linux AMD64 binary..."
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-linux-amd64 ./src
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(BINARY)-linux-amd64 ./src/cmd/agent-collab
 
 # Start E2E test cluster (3 nodes)
 e2e-up: build-linux

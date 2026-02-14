@@ -26,7 +26,7 @@ ARG DATE=unknown
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
-    -o /app/agent-collab ./src
+    -o /app/agent-collab ./src/cmd/agent-collab
 
 # -----------------------------------------------------------------------------
 # Runtime stage
