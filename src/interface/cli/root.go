@@ -33,6 +33,8 @@ P2P로 연결하여 컨텍스트를 공유하고 충돌을 사전 예방합니�
   agent-collab init -p my-project    새 클러스터 생성
   agent-collab join <token>          기존 클러스터 참여
   agent-collab status                클러스터 상태 확인
+  agent-collab leave                 클러스터 탈퇴
+  agent-collab mcp serve             MCP 서버 실행
 
 TUI 단축키:
   :           명령 팔레트
