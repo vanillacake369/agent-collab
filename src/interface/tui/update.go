@@ -1,12 +1,16 @@
 package tui
 
 import (
+	"context"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"agent-collab/src/application"
 	"agent-collab/src/interface/daemon"
 	"agent-collab/src/interface/tui/mode"
 )
@@ -416,10 +420,60 @@ func (m *Model) executeCommand(input string) tea.Cmd {
 // 액션 실행 함수들
 
 func (m *Model) executeInit(projectName string) error {
-	return m.executeInitWithClient(projectName)
+	// CLI의 runInit과 동일한 로직: daemon 없이 직접 초기화
+
+	// 1. 애플리케이션 생성
+	app, err := application.New(nil)
+	if err != nil {
+		return err
+	}
+
+	// 2. 타임아웃 컨텍스트
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// 3. 초기화 옵션 설정 (WireGuard는 TUI에서 비활성화)
+	opts := &application.InitializeOptions{
+		ProjectName:     projectName,
+		EnableWireGuard: false,
+	}
+
+	// 4. 초기화
+	result, err := app.InitializeWithOptions(ctx, opts)
+	if err != nil {
+		return err
+	}
+
+	// 5. 앱 정지 (데몬이 다시 로드할 것임)
+	app.Stop()
+
+	// 6. 기존 데몬이 있으면 종료
+	client := m.getClient()
+	if client.IsRunning() {
+		client.Shutdown()
+		// 데몬 종료 대기
+		for i := 0; i < 30; i++ {
+			time.Sleep(100 * time.Millisecond)
+			if !client.IsRunning() {
+				break
+			}
+		}
+	}
+
+	// 7. 데몬 시작 (백그라운드)
+	if err := startDaemonFromTUI(); err != nil {
+		m.SetResult("초기화 완료, 데몬 시작 실패: "+err.Error(), nil)
+		return nil
+	}
+
+	m.projectName = result.ProjectName
+	m.nodeID = result.NodeID
+	m.SetResult("프로젝트 '"+projectName+"' 초기화 완료", nil)
+	return nil
 }
 
 func (m *Model) executeInitWithClient(projectName string) error {
+	// daemon이 실행 중일 때만 사용 (현재는 사용하지 않음)
 	client := m.getClient()
 	result, err := client.Init(projectName)
 	if err != nil {
@@ -432,10 +486,59 @@ func (m *Model) executeInitWithClient(projectName string) error {
 }
 
 func (m *Model) executeJoin(token string) error {
-	return m.executeJoinWithClient(token)
+	// CLI의 runJoin과 동일한 로직: daemon 없이 직접 참여
+
+	// 1. 애플리케이션 생성
+	app, err := application.New(nil)
+	if err != nil {
+		return err
+	}
+
+	// 2. 타임아웃 컨텍스트
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// 3. 클러스터 참여
+	result, err := app.Join(ctx, token)
+	if err != nil {
+		app.Stop()
+		return err
+	}
+
+	// 4. 앱 정지 (데몬이 다시 로드할 것임)
+	app.Stop()
+
+	// 5. 기존 데몬이 있으면 종료
+	client := m.getClient()
+	if client.IsRunning() {
+		client.Shutdown()
+		// 데몬 종료 대기
+		for i := 0; i < 30; i++ {
+			time.Sleep(100 * time.Millisecond)
+			if !client.IsRunning() {
+				break
+			}
+		}
+	}
+
+	// 6. 데몬 시작 (백그라운드)
+	if err := startDaemonFromTUI(); err != nil {
+		m.SetResult("참여 완료, 데몬 시작 실패: "+err.Error(), nil)
+		return nil
+	}
+
+	m.projectName = result.ProjectName
+	m.peerCount = result.ConnectedPeers
+	tokenPreview := token
+	if len(token) > 10 {
+		tokenPreview = token[:10] + "..."
+	}
+	m.SetResult("클러스터 참여 완료 (토큰: "+tokenPreview+")", nil)
+	return nil
 }
 
 func (m *Model) executeJoinWithClient(token string) error {
+	// daemon이 실행 중일 때만 사용 (현재는 사용하지 않음)
 	client := m.getClient()
 	result, err := client.Join(token)
 	if err != nil {
@@ -719,4 +822,42 @@ func (m Model) fetchTokens() tea.Cmd {
 			TokensMonth: usage.TokensMonth,
 		}
 	}
+}
+
+// startDaemonFromTUI는 TUI에서 데몬을 백그라운드로 시작합니다.
+func startDaemonFromTUI() error {
+	client := daemon.NewClient()
+
+	// 이미 실행 중이면 성공
+	if client.IsRunning() {
+		return nil
+	}
+
+	// 실행 파일 경로 찾기
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	// 데몬 프로세스 시작
+	cmd := exec.Command(executable, "daemon", "run")
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.Stdin = nil
+
+	// 부모 프로세스에서 분리 (플랫폼별 설정은 cli 패키지에 있음)
+	// TUI에서는 기본 설정 사용
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	// 데몬 준비 대기
+	for i := 0; i < 30; i++ {
+		time.Sleep(100 * time.Millisecond)
+		if client.IsRunning() {
+			return nil
+		}
+	}
+
+	return nil
 }
