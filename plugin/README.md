@@ -38,7 +38,8 @@ agent-collab join <invite-token>
 ### Install Plugin
 
 ```bash
-# Install from marketplace
+# Add marketplace and install
+/plugin marketplace add https://github.com/vanillacake369/agent-collab
 /plugin install agent-collab
 
 # Or install directly from git

@@ -1,0 +1,21 @@
+{
+  "name": "agent-collab",
+  "description": "P2P-based multi-agent collaboration system for Claude Code. Enables context sharing, distributed locking, and real-time coordination across multiple Claude instances.",
+  "owner": {
+    "name": "vanillacake369",
+    "email": "support@agent-collab.dev"
+  },
+  "plugins": [
+    {
+      "name": "agent-collab",
+      "source": "./plugin",
+      "description": "Multi-agent collaboration tools with context sharing, lock management, and event notifications",
+      "version": "1.0.0",
+      "author": {
+        "name": "vanillacake369"
+      },
+      "keywords": ["collaboration", "multi-agent", "context-sharing", "p2p", "distributed", "lock-management"],
+      "homepage": "https://github.com/vanillacake369/agent-collab"
+    }
+  ]
+}
