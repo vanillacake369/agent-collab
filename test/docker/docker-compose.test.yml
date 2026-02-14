@@ -5,7 +5,7 @@ services:
   # Bootstrap node (cluster leader)
   peer1:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
     container_name: agent-collab-peer1
     hostname: peer1
@@ -31,7 +31,7 @@ services:
   # Peer node 2
   peer2:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
     container_name: agent-collab-peer2
     hostname: peer2
@@ -52,7 +52,7 @@ services:
   # Peer node 3
   peer3:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
     container_name: agent-collab-peer3
     hostname: peer3

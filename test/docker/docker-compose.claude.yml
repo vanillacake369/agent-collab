@@ -5,13 +5,17 @@
 #   1. Set token:        export CLAUDE_OAUTH_TOKEN=sk-ant-oat01-...
 #   2. Start cluster:    make claude-up
 #   3. Run agents:       make claude-alice / claude-bob / claude-charlie
+#
+# Environment:
+#   CLAUDE_OAUTH_TOKEN: Claude OAuth token (required)
+#   AGENT_PROMPT: Custom prompt to inject on agent start (optional)
 
 services:
   # Bootstrap node with Claude Code (Alice - Authentication)
   alice:
     build:
-      context: .
-      dockerfile: Dockerfile.claude
+      context: ../..
+      dockerfile: test/docker/Dockerfile.claude
     platform: linux/amd64  # Ensure consistent architecture
     container_name: claude-alice
     hostname: alice
@@ -23,10 +27,11 @@ services:
       - AGENT_NAME=Alice
       - AGENT_ROLE=authentication
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_OAUTH_TOKEN}
+      - AGENT_PROMPT=${AGENT_PROMPT:-}
     volumes:
       - alice-data:/data
       - alice-claude:/home/agent/.claude
-      - ./test-workspace:/workspace
+      - shared-workspace:/workspace
     working_dir: /workspace
     networks:
       collab-net:
@@ -37,8 +42,8 @@ services:
   # Peer node with Claude Code (Bob - Database)
   bob:
     build:
-      context: .
-      dockerfile: Dockerfile.claude
+      context: ../..
+      dockerfile: test/docker/Dockerfile.claude
     platform: linux/amd64  # Ensure consistent architecture
     container_name: claude-bob
     hostname: bob
@@ -50,10 +55,11 @@ services:
       - AGENT_NAME=Bob
       - AGENT_ROLE=database
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_OAUTH_TOKEN}
+      - AGENT_PROMPT=${AGENT_PROMPT:-}
     volumes:
       - bob-data:/data
       - bob-claude:/home/agent/.claude
-      - ./test-workspace:/workspace
+      - shared-workspace:/workspace
     working_dir: /workspace
     networks:
       collab-net:
@@ -66,8 +72,8 @@ services:
   # Peer node with Claude Code (Charlie - API)
   charlie:
     build:
-      context: .
-      dockerfile: Dockerfile.claude
+      context: ../..
+      dockerfile: test/docker/Dockerfile.claude
     platform: linux/amd64  # Ensure consistent architecture
     container_name: claude-charlie
     hostname: charlie
@@ -79,10 +85,11 @@ services:
       - AGENT_NAME=Charlie
       - AGENT_ROLE=api
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_OAUTH_TOKEN}
+      - AGENT_PROMPT=${AGENT_PROMPT:-}
     volumes:
       - charlie-data:/data
       - charlie-claude:/home/agent/.claude
-      - ./test-workspace:/workspace
+      - shared-workspace:/workspace
     working_dir: /workspace
     networks:
       collab-net:
@@ -100,6 +107,7 @@ networks:
         - subnet: 172.28.0.0/16
 
 volumes:
+  shared-workspace:
   alice-data:
   bob-data:
   charlie-data:

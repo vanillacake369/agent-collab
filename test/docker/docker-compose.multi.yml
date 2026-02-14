@@ -1,0 +1,157 @@
+# Multi-Agent Collaboration Docker Compose
+# 4 Claude agents with Interest-based routing
+#
+# Usage:
+#   1. Set token:        export CLAUDE_OAUTH_TOKEN=sk-ant-oat01-...
+#   2. Start cluster:    make multi-up
+#   3. Run agents:       make multi-alice / multi-bob / multi-charlie
+#   4. Watch events:     make multi-monitor
+#
+# Environment:
+#   CLAUDE_OAUTH_TOKEN: Claude OAuth token (required)
+#   AGENT_PROMPT: Custom prompt to inject on agent start (optional)
+
+services:
+  # Alice - auth-lib 담당 (Bootstrap node)
+  alice:
+    build:
+      context: ../..
+      dockerfile: test/docker/Dockerfile.claude
+    platform: linux/amd64
+    container_name: multi-alice
+    hostname: alice
+    environment:
+      - AGENT_COLLAB_PEER_ID=alice
+      - AGENT_COLLAB_LISTEN_ADDR=/ip4/0.0.0.0/tcp/9000
+      - AGENT_COLLAB_DATA_DIR=/data
+      - AGENT_COLLAB_BOOTSTRAP=true
+      # Interest 패턴: auth-lib 디렉토리 전체
+      - AGENT_COLLAB_INTERESTS=auth-lib/**
+      - AGENT_NAME=Alice
+      - AGENT_ROLE=auth-lib
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_OAUTH_TOKEN}
+      - AGENT_PROMPT=${AGENT_PROMPT:-}
+    volumes:
+      - alice-data:/data
+      - alice-claude:/home/agent/.claude
+      - shared-workspace:/workspace
+    working_dir: /workspace
+    networks:
+      multi-net:
+        ipv4_address: 172.29.0.10
+    stdin_open: true
+    tty: true
+
+  # Bob - user-service 담당
+  bob:
+    build:
+      context: ../..
+      dockerfile: test/docker/Dockerfile.claude
+    platform: linux/amd64
+    container_name: multi-bob
+    hostname: bob
+    environment:
+      - AGENT_COLLAB_PEER_ID=bob
+      - AGENT_COLLAB_LISTEN_ADDR=/ip4/0.0.0.0/tcp/9000
+      - AGENT_COLLAB_DATA_DIR=/data
+      - AGENT_COLLAB_BOOTSTRAP_PEERS=/ip4/172.29.0.10/tcp/9000/p2p/alice
+      # Interest 패턴: user-service 전체 + auth-lib의 token.go, middleware.go
+      - AGENT_COLLAB_INTERESTS=user-service/**,auth-lib/token.go,auth-lib/middleware.go
+      - AGENT_NAME=Bob
+      - AGENT_ROLE=user-service
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_OAUTH_TOKEN}
+      - AGENT_PROMPT=${AGENT_PROMPT:-}
+    volumes:
+      - bob-data:/data
+      - bob-claude:/home/agent/.claude
+      - shared-workspace:/workspace
+    working_dir: /workspace
+    networks:
+      multi-net:
+        ipv4_address: 172.29.0.11
+    depends_on:
+      - alice
+    stdin_open: true
+    tty: true
+
+  # Charlie - api-gateway 담당
+  charlie:
+    build:
+      context: ../..
+      dockerfile: test/docker/Dockerfile.claude
+    platform: linux/amd64
+    container_name: multi-charlie
+    hostname: charlie
+    environment:
+      - AGENT_COLLAB_PEER_ID=charlie
+      - AGENT_COLLAB_LISTEN_ADDR=/ip4/0.0.0.0/tcp/9000
+      - AGENT_COLLAB_DATA_DIR=/data
+      - AGENT_COLLAB_BOOTSTRAP_PEERS=/ip4/172.29.0.10/tcp/9000/p2p/alice
+      # Interest 패턴: api-gateway 전체 + auth-lib/jwt.go + user-service/api/*
+      - AGENT_COLLAB_INTERESTS=api-gateway/**,auth-lib/jwt.go,user-service/api/*
+      - AGENT_NAME=Charlie
+      - AGENT_ROLE=api-gateway
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_OAUTH_TOKEN}
+      - AGENT_PROMPT=${AGENT_PROMPT:-}
+    volumes:
+      - charlie-data:/data
+      - charlie-claude:/home/agent/.claude
+      - shared-workspace:/workspace
+    working_dir: /workspace
+    networks:
+      multi-net:
+        ipv4_address: 172.29.0.12
+    depends_on:
+      - alice
+    stdin_open: true
+    tty: true
+
+  # Monitor - 모든 이벤트 관찰자 (테스트 검증용)
+  monitor:
+    build:
+      context: ../..
+      dockerfile: test/docker/Dockerfile.claude
+    platform: linux/amd64
+    container_name: multi-monitor
+    hostname: monitor
+    environment:
+      - AGENT_COLLAB_PEER_ID=monitor
+      - AGENT_COLLAB_LISTEN_ADDR=/ip4/0.0.0.0/tcp/9000
+      - AGENT_COLLAB_DATA_DIR=/data
+      - AGENT_COLLAB_BOOTSTRAP_PEERS=/ip4/172.29.0.10/tcp/9000/p2p/alice
+      # Interest 패턴: 모든 파일
+      - AGENT_COLLAB_INTERESTS=**/*
+      - AGENT_NAME=Monitor
+      - AGENT_ROLE=observer
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_OAUTH_TOKEN}
+      - AGENT_PROMPT=${AGENT_PROMPT:-}
+    volumes:
+      - monitor-data:/data
+      - monitor-claude:/home/agent/.claude
+      - shared-workspace:/workspace:ro
+    working_dir: /workspace
+    networks:
+      multi-net:
+        ipv4_address: 172.29.0.99
+    depends_on:
+      - alice
+    stdin_open: true
+    tty: true
+
+networks:
+  multi-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16
+
+volumes:
+  shared-workspace:
+  alice-data:
+  bob-data:
+  charlie-data:
+  monitor-data:
+  alice-claude:
+  bob-claude:
+  charlie-claude:
+  monitor-claude:

@@ -16,7 +16,7 @@ async function readStdin() {
   return Buffer.concat(chunks).toString('utf-8');
 }
 
-// Check if daemon is running and cluster has peers
+// Check if daemon is running and cluster status
 function getClusterStatus() {
   try {
     const result = execSync('agent-collab mcp call cluster_status \'{}\'', {
@@ -26,12 +26,13 @@ function getClusterStatus() {
     });
     const status = JSON.parse(result);
     return {
+      running: status.running === true,
       active: status.running === true && (status.peer_count || 0) > 0,
       peerCount: status.peer_count || 0,
       projectName: status.project_name || ''
     };
   } catch {
-    return { active: false, peerCount: 0, projectName: '' };
+    return { running: false, active: false, peerCount: 0, projectName: '' };
   }
 }
 
@@ -104,15 +105,16 @@ async function main() {
       return;
     }
 
-    // Check if cluster is active (has peers)
+    // Check cluster status
     const cluster = getClusterStatus();
-    if (!cluster.active) {
-      // No cluster or no peers - skip auto-sharing
+
+    // Skip if daemon is not running
+    if (!cluster.running) {
       console.log(JSON.stringify({ continue: true }));
       return;
     }
 
-    // Cluster is active - automatically share context
+    // Share to local EventRouter (even without peers, events are stored locally)
     const filePath = toolInput.file_path || toolInput.filePath || 'file';
     const changeSummary = extractChangeSummary(toolName, toolInput, toolResult);
 

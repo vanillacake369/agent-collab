@@ -1,16 +1,47 @@
 #!/bin/bash
 # =============================================================================
 # Docker Entrypoint for Claude Code Integration Testing
-# Handles: daemon startup, OAuth authentication, and agent execution
+# Handles: plugin install, daemon startup, OAuth authentication, and agent execution
 # =============================================================================
 
 set -e
 
 AGENT_NAME="${AGENT_NAME:-Agent}"
 AGENT_ROLE="${AGENT_ROLE:-developer}"
+AGENT_PROMPT="${AGENT_PROMPT:-}"
 TOKEN_FILE="/home/agent/.claude/.oauth_token"
+PLUGIN_SRC="/opt/agent-collab-plugin"
+PLUGIN_DST="/home/agent/.claude/plugins/local/agent-collab"
+SETTINGS_SRC="/opt/claude-settings.json"
+SETTINGS_DST="/home/agent/.claude/settings.json"
 
 log() { echo "[$(date '+%H:%M:%S')] $1"; }
+
+# =============================================================================
+# Install plugin (handles volume mount overwriting ~/.claude)
+# =============================================================================
+install_plugin() {
+    # Ensure .claude directory exists
+    mkdir -p /home/agent/.claude/plugins/local
+
+    # Install plugin if not already installed or outdated
+    if [ -d "$PLUGIN_SRC" ]; then
+        if [ ! -d "$PLUGIN_DST" ] || [ "$PLUGIN_SRC/hooks/hooks.json" -nt "$PLUGIN_DST/hooks/hooks.json" ]; then
+            log "Installing agent-collab plugin..."
+            rm -rf "$PLUGIN_DST"
+            cp -r "$PLUGIN_SRC" "$PLUGIN_DST"
+            chmod +x "$PLUGIN_DST/hooks/"*.mjs 2>/dev/null || true
+            log "Plugin installed to $PLUGIN_DST"
+        fi
+    fi
+
+    # Install settings.json if not exists
+    if [ -f "$SETTINGS_SRC" ] && [ ! -f "$SETTINGS_DST" ]; then
+        log "Installing Claude settings..."
+        cp "$SETTINGS_SRC" "$SETTINGS_DST"
+        log "Settings installed to $SETTINGS_DST"
+    fi
+}
 
 # Load saved token if exists
 load_token() {
@@ -58,7 +89,8 @@ start_daemon() {
             sleep 2
 
             # Save token to shared workspace for other nodes
-            agent-collab token show 2>/dev/null > "${TOKEN_FILE}" || true
+            # Use grep to extract only the base64 token (ignore JSON logs)
+            agent-collab token show 2>/dev/null | grep -E '^eyJ[A-Za-z0-9_-]+$' > "${TOKEN_FILE}" || true
             if [ -s "${TOKEN_FILE}" ]; then
                 log "Invite token saved: $(cat ${TOKEN_FILE} | head -c 30)..."
             else
@@ -78,12 +110,13 @@ start_daemon() {
         local INVITE_TOKEN=""
         for i in $(seq 1 90); do
             if [ -s "${TOKEN_FILE}" ]; then
-                INVITE_TOKEN=$(cat "${TOKEN_FILE}" | head -1)
-                # Validate token looks like base64 (not an error message)
-                if echo "$INVITE_TOKEN" | grep -qE '^[A-Za-z0-9_-]+$'; then
+                # Extract only the base64 token line (starts with eyJ)
+                INVITE_TOKEN=$(grep -E '^eyJ[A-Za-z0-9_-]+$' "${TOKEN_FILE}" | head -1)
+                if [ -n "$INVITE_TOKEN" ]; then
+                    log "Found valid token (${#INVITE_TOKEN} chars)"
                     break
                 else
-                    log "Invalid token format, waiting..."
+                    log "Waiting for valid token format..."
                     INVITE_TOKEN=""
                 fi
             fi
@@ -170,8 +203,12 @@ run_agent() {
 
     log "Running ${AGENT_NAME} (${AGENT_ROLE})..."
 
-    # Default prompts based on role
-    # 플러그인 훅이 Edit/Write 시 자동으로 락을 처리하므로 프롬프트는 단순하게
+    # Priority: 1. Function argument, 2. AGENT_PROMPT env, 3. Role-based default
+    if [ -z "$prompt" ] && [ -n "$AGENT_PROMPT" ]; then
+        prompt="$AGENT_PROMPT"
+    fi
+
+    # Default prompts based on role (fallback)
     if [ -z "$prompt" ]; then
         case "$AGENT_ROLE" in
             authentication)
@@ -183,8 +220,20 @@ run_agent() {
             api)
                 prompt="main.go의 setupRoutes()와 handleAPI() 함수를 RESTful API로 구현해줘. 먼저 search_similar로 인증과 DB 컨텍스트를 확인하고, 완료 후 share_context로 공유해줘."
                 ;;
+            auth-lib)
+                prompt="auth-lib의 JWT 관련 코드를 분석하고, 개선이 필요한 부분을 수정해줘. 완료 후 share_context로 변경 내용을 다른 에이전트에게 공유해줘."
+                ;;
+            user-service)
+                prompt="user-service의 API와 DB 코드를 분석하고, 개선이 필요한 부분을 수정해줘. 먼저 search_similar로 auth-lib 관련 컨텍스트를 확인하고, 완료 후 share_context로 공유해줘."
+                ;;
+            api-gateway)
+                prompt="api-gateway의 라우팅 코드를 분석하고, 개선이 필요한 부분을 수정해줘. 먼저 search_similar로 관련 컨텍스트를 확인하고, 완료 후 share_context로 공유해줘."
+                ;;
+            observer)
+                prompt="get_events를 호출해서 클러스터의 최근 이벤트를 확인하고 요약해줘."
+                ;;
             *)
-                prompt="프로젝트 구조를 분석하고 개선점을 제안해줘."
+                prompt="프로젝트 구조를 분석하고 개선점을 제안해줘. 분석 결과를 share_context로 다른 에이전트에게 공유해줘."
                 ;;
         esac
     fi
@@ -206,21 +255,25 @@ run_agent() {
 
 case "${1:-idle}" in
     idle)
-        # Start daemon, initialize cluster, and keep container running
+        # Install plugin, start daemon, initialize cluster, and keep container running
+        install_plugin
         start_daemon
         load_token
         log "Container ready. Use 'docker exec' to run commands."
+        log "Plugin installed: $PLUGIN_DST"
         tail -f /dev/null
         ;;
 
     setup)
         # Setup authentication only
+        install_plugin
         load_token
         setup_auth
         ;;
 
     run)
         # Run agent task
+        install_plugin
         start_daemon
         load_token
 
@@ -234,12 +287,14 @@ case "${1:-idle}" in
 
     shell)
         # Interactive shell
+        install_plugin
         start_daemon
         exec /bin/bash
         ;;
 
     claude)
         # Run claude directly
+        install_plugin
         start_daemon
         shift
         exec claude "$@"
@@ -247,6 +302,7 @@ case "${1:-idle}" in
 
     *)
         # Pass through to claude
+        install_plugin
         start_daemon
         exec claude "$@"
         ;;

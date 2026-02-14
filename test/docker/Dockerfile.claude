@@ -58,15 +58,14 @@ RUN agent-collab version || (echo "Binary architecture mismatch!" && exit 1)
 RUN mkdir -p /data /workspace /home/agent/.claude && \
     chown -R agent:agent /data /workspace /home/agent
 
-# Install agent-collab plugin (Claude Code will auto-detect plugins in ~/.claude/plugins/)
-COPY --chown=agent:agent plugin/ /home/agent/.claude/plugins/local/agent-collab/
+# Copy plugin to a staging location (will be installed at runtime due to volume mount)
+COPY --chown=agent:agent plugin/ /opt/agent-collab-plugin/
 
 # Make hook scripts executable
-RUN chmod +x /home/agent/.claude/plugins/local/agent-collab/hooks/*.mjs 2>/dev/null || true
+RUN chmod +x /opt/agent-collab-plugin/hooks/*.mjs 2>/dev/null || true
 
-# Setup MCP configuration in settings.json
-# Claude Code reads ~/.claude/settings.json for MCP server registration
-RUN cat > /home/agent/.claude/settings.json << 'EOF'
+# Create default settings template
+RUN cat > /opt/claude-settings.json << 'EOF'
 {
   "mcpServers": {
     "agent-collab": {
@@ -89,10 +88,9 @@ RUN cat > /home/agent/.claude/settings.json << 'EOF'
   }
 }
 EOF
-RUN chown agent:agent /home/agent/.claude/settings.json
 
 # Copy startup script
-COPY --chmod=755 scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
+COPY --chmod=755 test/docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
 
 USER agent
 WORKDIR /workspace
