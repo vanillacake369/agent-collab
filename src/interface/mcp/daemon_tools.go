@@ -171,6 +171,10 @@ func RegisterDaemonTools(server *Server, client *daemon.Client) {
 					Type:        "integer",
 					Description: "Maximum number of events to return (default 10)",
 				},
+				"include_all": {
+					Type:        "boolean",
+					Description: "If true, include all events regardless of interest filtering (default false)",
+				},
 			},
 		},
 	}, func(ctx context.Context, args map[string]any) (*ToolCallResult, error) {
@@ -353,7 +357,12 @@ func handleDaemonGetEvents(ctx context.Context, client *daemon.Client, args map[
 		eventType = t
 	}
 
-	result, err := client.ListEvents(limit, eventType)
+	includeAll := false
+	if ia, ok := args["include_all"].(bool); ok {
+		includeAll = ia
+	}
+
+	result, err := client.ListEvents(limit, eventType, includeAll)
 	if err != nil {
 		return textResult(fmt.Sprintf("Error getting events: %v", err)), nil
 	}
@@ -413,7 +422,8 @@ func handleDaemonGetEvents(ctx context.Context, client *daemon.Client, args map[
 
 func handleDaemonGetWarnings(ctx context.Context, client *daemon.Client, args map[string]any) (*ToolCallResult, error) {
 	// Get recent important events that might affect the current agent's work
-	result, err := client.ListEvents(20, "")
+	// Use includeAll=true to see all cluster events regardless of interest filtering
+	result, err := client.ListEvents(20, "", true)
 	if err != nil {
 		return textResult(fmt.Sprintf("Error getting warnings: %v", err)), nil
 	}

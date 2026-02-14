@@ -20,13 +20,11 @@ func TestP2PContextSharing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Create two nodes
+	// Create two nodes (global cluster - no projectID)
 	cfg1 := libp2p.DefaultConfig()
-	cfg1.ProjectID = "test-project"
 	cfg1.ListenAddrs = []string{"/ip4/127.0.0.1/tcp/0"}
 
 	cfg2 := libp2p.DefaultConfig()
-	cfg2.ProjectID = "test-project"
 	cfg2.ListenAddrs = []string{"/ip4/127.0.0.1/tcp/0"}
 
 	node1, err := libp2p.NewNode(ctx, cfg1)
@@ -44,11 +42,11 @@ func TestP2PContextSharing(t *testing.T) {
 	t.Logf("Node1 ID: %s", node1.ID())
 	t.Logf("Node2 ID: %s", node2.ID())
 
-	// Subscribe to project topics
-	if err := node1.SubscribeProjectTopics(ctx); err != nil {
+	// Subscribe to global topics
+	if err := node1.SubscribeGlobalTopics(ctx); err != nil {
 		t.Fatalf("Node1 subscribe failed: %v", err)
 	}
-	if err := node2.SubscribeProjectTopics(ctx); err != nil {
+	if err := node2.SubscribeGlobalTopics(ctx); err != nil {
 		t.Fatalf("Node2 subscribe failed: %v", err)
 	}
 
@@ -155,13 +153,11 @@ func TestP2PLockNegotiation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Create two nodes
+	// Create two nodes (global cluster - no projectID)
 	cfg1 := libp2p.DefaultConfig()
-	cfg1.ProjectID = "test-lock-project"
 	cfg1.ListenAddrs = []string{"/ip4/127.0.0.1/tcp/0"}
 
 	cfg2 := libp2p.DefaultConfig()
-	cfg2.ProjectID = "test-lock-project"
 	cfg2.ListenAddrs = []string{"/ip4/127.0.0.1/tcp/0"}
 
 	node1, err := libp2p.NewNode(ctx, cfg1)
@@ -176,9 +172,9 @@ func TestP2PLockNegotiation(t *testing.T) {
 	}
 	defer node2.Close()
 
-	// Subscribe to project topics
-	node1.SubscribeProjectTopics(ctx)
-	node2.SubscribeProjectTopics(ctx)
+	// Subscribe to global topics
+	node1.SubscribeGlobalTopics(ctx)
+	node2.SubscribeGlobalTopics(ctx)
 
 	// Connect nodes
 	node2Info := node2.Host().Peerstore().PeerInfo(node2.ID())
@@ -188,8 +184,8 @@ func TestP2PLockNegotiation(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
-	// Subscribe to lock intent topic
-	lockTopic := "/agent-collab/test-lock-project/lock/intent"
+	// Subscribe to lock intent topic (global)
+	lockTopic := libp2p.TopicLockIntent
 	sub2, err := node2.Subscribe(lockTopic)
 	if err != nil {
 		t.Fatalf("Subscribe failed: %v", err)
@@ -264,11 +260,10 @@ func TestP2PAgentDiscovery(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Create three nodes (agents)
+	// Create three nodes (agents) - global cluster
 	nodes := make([]*libp2p.Node, 3)
 	for i := range 3 {
 		cfg := libp2p.DefaultConfig()
-		cfg.ProjectID = "test-discovery"
 		cfg.ListenAddrs = []string{"/ip4/127.0.0.1/tcp/0"}
 
 		node, err := libp2p.NewNode(ctx, cfg)

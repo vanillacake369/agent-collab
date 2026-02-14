@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"agent-collab/src/application"
+	"agent-collab/src/domain/event"
+	"agent-collab/src/domain/interest"
 	"agent-collab/src/domain/lock"
 	"agent-collab/src/infrastructure/storage/vector"
 )
@@ -246,6 +248,9 @@ func (s *Server) handleInit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Register interests from environment variable
+	s.registerInterestsFromEnv(result.NodeID)
+
 	json.NewEncoder(w).Encode(InitResponse{
 		Success:     true,
 		ProjectName: result.ProjectName,
@@ -266,6 +271,9 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(JoinResponse{Error: err.Error()})
 		return
 	}
+
+	// Register interests from environment variable
+	s.registerInterestsFromEnv(result.NodeID)
 
 	json.NewEncoder(w).Encode(JoinResponse{
 		Success:        true,
@@ -570,11 +578,14 @@ func (s *Server) handleShareContext(w http.ResponseWriter, r *http.Request) {
 		syncManager.WatchFile(req.FilePath)
 	}
 
-	// Publish context shared event
+	// Publish context shared event (local EventBus)
 	s.PublishEvent(NewEvent(EventContextUpdated, ContextEventData{
 		FilePath: req.FilePath,
 		Content:  req.Content,
 	}))
+
+	// Publish to EventRouter for Interest-based routing
+	s.publishToEventRouter(req.FilePath, req.Content, embedding)
 
 	json.NewEncoder(w).Encode(ShareContextResponse{
 		Success:    true,
@@ -592,7 +603,40 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	eventType := r.URL.Query().Get("type")
+	includeAll := r.URL.Query().Get("include_all") == "true"
 
+	// Try EventRouter first for Interest-based filtering
+	eventRouter := s.app.EventRouter()
+	if eventRouter != nil {
+		agentID := s.getAgentID()
+		filter := &event.EventFilter{
+			Limit:      limit,
+			IncludeAll: includeAll,
+		}
+		if eventType != "" {
+			filter.Types = []event.EventType{event.EventType(eventType)}
+		}
+
+		domainEvents := eventRouter.GetEvents(agentID, filter)
+
+		// Convert domain events to daemon events for response
+		var events []Event
+		for _, de := range domainEvents {
+			events = append(events, Event{
+				Type:      EventType(de.Type),
+				Timestamp: de.Timestamp,
+				Data:      de.Payload,
+			})
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"events": events,
+			"count":  len(events),
+		})
+		return
+	}
+
+	// Fallback to local eventBus
 	var events []Event
 	if eventType != "" {
 		events = s.eventBus.GetEventsByType(EventType(eventType), limit)
@@ -797,4 +841,49 @@ func analyzeCohesion(query string, results []*vector.SearchResult) CheckCohesion
 	}
 
 	return response
+}
+
+// getAgentID returns the agent ID for this node.
+func (s *Server) getAgentID() string {
+	if node := s.app.Node(); node != nil {
+		return node.ID().String()
+	}
+	return ""
+}
+
+// publishToEventRouter publishes context shared event to EventRouter for Interest-based routing.
+func (s *Server) publishToEventRouter(filePath, content string, embedding []float32) {
+	s.app.PublishContextSharedEvent(s.ctx, filePath, content, embedding)
+}
+
+// registerInterestsFromEnv registers interests from AGENT_COLLAB_INTERESTS environment variable.
+func (s *Server) registerInterestsFromEnv(agentID string) {
+	interestMgr := s.app.InterestManager()
+	if interestMgr == nil {
+		return
+	}
+
+	// Get agent name from environment or use default
+	agentName := os.Getenv("AGENT_NAME")
+	if agentName == "" {
+		agentName = "Agent-" + agentID[:8]
+	}
+
+	// Register interests from environment
+	registered, err := interest.RegisterFromEnvironment(interestMgr, agentID, agentName)
+	if err != nil {
+		s.PublishEvent(NewEvent(EventWarning, map[string]string{
+			"message": fmt.Sprintf("Failed to register interests: %v", err),
+		}))
+		return
+	}
+
+	if registered != nil {
+		s.PublishEvent(NewEvent(EventInterestRegistered, map[string]any{
+			"agent_id":   agentID,
+			"agent_name": agentName,
+			"patterns":   registered.Patterns,
+			"level":      registered.Level.String(),
+		}))
+	}
 }

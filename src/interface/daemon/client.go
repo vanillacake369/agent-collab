@@ -284,10 +284,13 @@ type ListEventsResponse struct {
 }
 
 // ListEvents returns recent events from the daemon.
-func (c *Client) ListEvents(limit int, eventType string) (*ListEventsResponse, error) {
+func (c *Client) ListEvents(limit int, eventType string, includeAll bool) (*ListEventsResponse, error) {
 	path := fmt.Sprintf("/events/list?limit=%d", limit)
 	if eventType != "" {
 		path += "&type=" + eventType
+	}
+	if includeAll {
+		path += "&include_all=true"
 	}
 
 	resp, err := c.get(path)

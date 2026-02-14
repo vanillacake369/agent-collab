@@ -292,7 +292,7 @@ func TestFeature_Status_Scenario_EventsListing(t *testing.T) {
 		client := server.Client()
 
 		t.Run("When I call ListEvents()", func(t *testing.T) {
-			eventsResp, err := client.ListEvents(10, "")
+			eventsResp, err := client.ListEvents(10, "", false)
 
 			t.Run("Then it should succeed", func(t *testing.T) {
 				if err != nil {
@@ -409,7 +409,7 @@ func TestFeature_Status_Scenario_EnhancedStatus(t *testing.T) {
 			status, _ := client.Status()
 			tokenUsage, _ := client.TokenUsage()
 			peers, _ := client.ListPeers()
-			events, _ := client.ListEvents(10, "")
+			events, _ := client.ListEvents(10, "", false)
 
 			t.Run("Then status should be available", func(t *testing.T) {
 				if status.ProjectName != "enhanced-test" {

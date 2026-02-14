@@ -19,12 +19,11 @@ import (
 
 // Node는 libp2p 노드입니다.
 type Node struct {
-	host      host.Host
-	dht       *dht.IpfsDHT
-	pubsub    *pubsub.PubSub
-	topics    map[string]*pubsub.Topic
-	subs      map[string]*pubsub.Subscription
-	projectID string
+	host   host.Host
+	dht    *dht.IpfsDHT
+	pubsub *pubsub.PubSub
+	topics map[string]*pubsub.Topic
+	subs   map[string]*pubsub.Subscription
 
 	// Phase 1: Compression, Batching, Metrics
 	batcher *MessageBatcher
@@ -52,9 +51,6 @@ type Config struct {
 
 	// Bootstrap peer 주소
 	BootstrapPeers []peer.AddrInfo
-
-	// 프로젝트 ID (Rendezvous namespace)
-	ProjectID string
 
 	// 개인 키 (nil이면 새로 생성)
 	PrivateKey crypto.PrivKey
@@ -185,13 +181,12 @@ func NewNode(ctx context.Context, cfg *Config) (*Node, error) {
 	}
 
 	node := &Node{
-		host:      h,
-		dht:       kadDHT,
-		pubsub:    ps,
-		topics:    make(map[string]*pubsub.Topic),
-		subs:      make(map[string]*pubsub.Subscription),
-		projectID: cfg.ProjectID,
-		metrics:   NewNetworkMetrics(),
+		host:    h,
+		dht:     kadDHT,
+		pubsub:  ps,
+		topics:  make(map[string]*pubsub.Topic),
+		subs:    make(map[string]*pubsub.Subscription),
+		metrics: NewNetworkMetrics(),
 	}
 
 	// Phase 1: Initialize batcher if configured
@@ -480,25 +475,29 @@ func (n *Node) Close() error {
 	return n.host.Close()
 }
 
-// ProjectTopics는 프로젝트 토픽 이름 목록을 반환합니다.
-func (n *Node) ProjectTopics() []string {
-	prefix := "/agent-collab/" + n.projectID
-	return []string{
-		prefix + "/context",
-		prefix + "/lock",
-		prefix + "/vibe",
-		prefix + "/human",
-	}
+// GlobalTopics returns the list of global topic names.
+func (n *Node) GlobalTopics() []string {
+	return CoreTopics()
 }
 
-// SubscribeProjectTopics는 프로젝트 토픽들을 구독합니다.
-func (n *Node) SubscribeProjectTopics(ctx context.Context) error {
-	for _, topicName := range n.ProjectTopics() {
+// SubscribeGlobalTopics subscribes to all global topics.
+func (n *Node) SubscribeGlobalTopics(ctx context.Context) error {
+	for _, topicName := range n.GlobalTopics() {
 		if _, err := n.Subscribe(topicName); err != nil {
 			return fmt.Errorf("토픽 구독 실패 (%s): %w", topicName, err)
 		}
 	}
 	return nil
+}
+
+// Deprecated: ProjectTopics is deprecated. Use GlobalTopics instead.
+func (n *Node) ProjectTopics() []string {
+	return n.GlobalTopics()
+}
+
+// Deprecated: SubscribeProjectTopics is deprecated. Use SubscribeGlobalTopics instead.
+func (n *Node) SubscribeProjectTopics(ctx context.Context) error {
+	return n.SubscribeGlobalTopics(ctx)
 }
 
 // GetSubscription returns the subscription for a topic.

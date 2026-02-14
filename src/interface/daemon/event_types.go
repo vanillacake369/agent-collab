@@ -30,6 +30,14 @@ const (
 	// System events
 	EventDaemonReady    EventType = "daemon.ready"
 	EventDaemonShutdown EventType = "daemon.shutdown"
+
+	// Interest events
+	EventInterestRegistered   EventType = "interest.registered"
+	EventInterestUnregistered EventType = "interest.unregistered"
+
+	// Warning/Error events
+	EventWarning EventType = "warning"
+	EventError   EventType = "error"
 )
 
 // Event is a daemon event that can be streamed to clients.

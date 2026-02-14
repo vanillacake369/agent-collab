@@ -101,7 +101,7 @@ func runStatusFromDaemon(client *daemon.Client) error {
 	}
 
 	// Fetch events (always, limit to 5 recent)
-	if eventsResp, err := client.ListEvents(5, ""); err == nil {
+	if eventsResp, err := client.ListEvents(5, "", false); err == nil {
 		enhanced.Events = eventsResp.Events
 	}
 
@@ -299,7 +299,7 @@ func printDaemonStatus(client *daemon.Client) error {
 	}
 
 	// Fetch events (always, limit to 5 recent)
-	if eventsResp, err := client.ListEvents(5, ""); err == nil {
+	if eventsResp, err := client.ListEvents(5, "", false); err == nil {
 		enhanced.Events = eventsResp.Events
 	}
 

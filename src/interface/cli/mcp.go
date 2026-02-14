@@ -224,11 +224,12 @@ func runMCPCall(cmd *cobra.Command, args []string) error {
 			limit = int(l)
 		}
 		eventType, _ := toolArgs["type"].(string)
-		result, err = client.ListEvents(limit, eventType)
+		includeAll, _ := toolArgs["include_all"].(bool)
+		result, err = client.ListEvents(limit, eventType, includeAll)
 
 	case "get_warnings":
-		// Get recent events that might be warnings
-		events, listErr := client.ListEvents(20, "")
+		// Get recent events that might be warnings (includeAll=true to see all cluster events)
+		events, listErr := client.ListEvents(20, "", true)
 		if listErr != nil {
 			err = listErr
 		} else {

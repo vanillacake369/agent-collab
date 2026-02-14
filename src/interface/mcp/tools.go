@@ -278,6 +278,9 @@ func handleShareContext(ctx context.Context, app *application.App, args map[stri
 		return textResult(fmt.Sprintf("Error persisting context: %v", err)), nil
 	}
 
+	// Publish to EventRouter for interest-based routing
+	app.PublishContextSharedEvent(ctx, filePath, content, embedding)
+
 	// Also watch the file for future changes if syncManager is available
 	syncManager := app.SyncManager()
 	if syncManager != nil && filePath != "" {

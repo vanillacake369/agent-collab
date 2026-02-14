@@ -10,6 +10,8 @@ import (
 
 	"agent-collab/src/domain/agent"
 	"agent-collab/src/domain/ctxsync"
+	"agent-collab/src/domain/event"
+	"agent-collab/src/domain/interest"
 	"agent-collab/src/domain/lock"
 	"agent-collab/src/domain/token"
 	"agent-collab/src/infrastructure/crypto"
@@ -50,6 +52,11 @@ type App struct {
 	syncManager   *ctxsync.SyncManager
 	tokenTracker  *token.Tracker
 	agentRegistry *agent.Registry
+
+	// Global cluster services
+	interestMgr *interest.Manager
+	eventRouter *event.Router
+	eventBridge *libp2p.EventBridge
 
 	// State
 	running bool
@@ -177,10 +184,9 @@ func (a *App) InitializeWithOptions(ctx context.Context, opts *InitializeOptions
 		}
 	}
 
-	// 3. libp2p 노드 생성
+	// 3. libp2p 노드 생성 (global cluster - no projectID)
 	nodeConfig := libp2p.DefaultConfig()
 	nodeConfig.PrivateKey = keyPair.PrivateKey
-	nodeConfig.ProjectID = opts.ProjectName
 
 	node, err := libp2p.NewNode(ctx, nodeConfig)
 	if err != nil {
@@ -349,10 +355,9 @@ func (a *App) LoadFromConfig(ctx context.Context) error {
 	}
 	a.keyPair = keyPair
 
-	// Create libp2p node with saved listen addresses
+	// Create libp2p node with saved listen addresses (global cluster - no projectID)
 	nodeConfig := libp2p.DefaultConfig()
 	nodeConfig.PrivateKey = keyPair.PrivateKey
-	nodeConfig.ProjectID = a.config.ProjectName
 
 	// Use saved listen addresses if available (to keep same ports)
 	if len(a.config.ListenAddrs) > 0 {
@@ -463,10 +468,9 @@ func (a *App) Join(ctx context.Context, tokenStr string) (*JoinResult, error) {
 		bootstrapPeers = append(bootstrapPeers, *peerInfo)
 	}
 
-	// 5. libp2p 노드 생성
+	// 5. libp2p 노드 생성 (global cluster - no projectID)
 	nodeConfig := libp2p.DefaultConfig()
 	nodeConfig.PrivateKey = keyPair.PrivateKey
-	nodeConfig.ProjectID = token.ProjectName
 	nodeConfig.BootstrapPeers = bootstrapPeers
 
 	node, err := libp2p.NewNode(ctx, nodeConfig)
@@ -622,9 +626,16 @@ func (a *App) Start() error {
 	// 메시지 핸들러 설정
 	a.setupMessageHandlers()
 
-	// 프로젝트 토픽 구독
-	if err := a.node.SubscribeProjectTopics(ctx); err != nil {
+	// 글로벌 토픽 구독
+	if err := a.node.SubscribeGlobalTopics(ctx); err != nil {
 		return fmt.Errorf("failed to subscribe topics: %w", err)
+	}
+
+	// Start event bridge for P2P event routing
+	if a.eventBridge != nil {
+		if err := a.eventBridge.Start(ctx); err != nil {
+			return fmt.Errorf("failed to start event bridge: %w", err)
+		}
 	}
 
 	// Start message processing goroutines
@@ -653,6 +664,11 @@ func (a *App) Stop() error {
 
 	if a.syncManager != nil {
 		a.syncManager.Stop()
+	}
+
+	// Stop event bridge
+	if a.eventBridge != nil {
+		a.eventBridge.Stop()
 	}
 
 	// Close Phase 3 components
@@ -1219,7 +1235,96 @@ func (a *App) initPhase3Components(nodeID, nodeName string) error {
 	// Initialize agent registry
 	a.agentRegistry = agent.NewRegistry(a.ctx)
 
+	// Initialize global cluster services (Interest Manager & Event Router)
+	a.interestMgr = interest.NewManager()
+	a.eventRouter = event.NewRouter(a.interestMgr, &event.RouterConfig{
+		NodeID:      nodeID,
+		NodeName:    nodeName,
+		VectorStore: a.vectorStore,
+	})
+
+	// Create event bridge for P2P integration
+	a.eventBridge = libp2p.NewEventBridge(a.node, a.eventRouter)
+	a.eventBridge.SetInterestManager(a.interestMgr)
+
+	// Register interests from environment variable
+	a.registerInterestsFromEnv(nodeID, nodeName)
+
 	return nil
+}
+
+// registerInterestsFromEnv registers interests from AGENT_COLLAB_INTERESTS environment variable.
+func (a *App) registerInterestsFromEnv(nodeID, nodeName string) {
+	if a.interestMgr == nil {
+		return
+	}
+
+	// Get agent name from environment or use provided name
+	agentName := os.Getenv("AGENT_NAME")
+	if agentName == "" {
+		agentName = nodeName
+	}
+
+	// Register interests from environment
+	registered, err := interest.RegisterFromEnvironment(a.interestMgr, nodeID, agentName)
+	if err != nil {
+		if a.logger != nil {
+			a.logger.Warn("Failed to register interests from environment", "error", err)
+		}
+		return
+	}
+
+	if registered != nil {
+		if a.logger != nil {
+			a.logger.Info("Registered interests from environment",
+				"agent_id", nodeID,
+				"agent_name", agentName,
+				"patterns", registered.Patterns,
+				"level", registered.Level.String())
+		}
+	}
+}
+
+// InterestManager returns the interest manager.
+func (a *App) InterestManager() *interest.Manager {
+	return a.interestMgr
+}
+
+// EventRouter returns the event router.
+func (a *App) EventRouter() *event.Router {
+	return a.eventRouter
+}
+
+// PublishContextSharedEvent publishes a context shared event to EventRouter.
+// This is the single source of truth for publishing context events.
+func (a *App) PublishContextSharedEvent(ctx context.Context, filePath, content string, embedding []float32) {
+	if a.eventRouter == nil {
+		return
+	}
+
+	nodeID := ""
+	nodeName := os.Getenv("AGENT_NAME")
+	if a.node != nil {
+		nodeID = a.node.ID().String()
+		if nodeName == "" {
+			nodeName = "Agent-" + nodeID[:8]
+		}
+	}
+	if nodeName == "" {
+		nodeName = "Agent"
+	}
+
+	evt := event.NewContextSharedEvent(nodeID, nodeName, filePath, &event.ContextSharedPayload{
+		Content: content,
+	})
+	evt.Embedding = embedding
+
+	_ = a.eventRouter.Publish(ctx, evt)
+}
+
+// EventBridge returns the event bridge.
+func (a *App) EventBridge() *libp2p.EventBridge {
+	return a.eventBridge
 }
 
 // CreateInviteToken creates an invite token.

@@ -11,10 +11,12 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 )
 
+// GlobalServiceName is the mDNS service name for the global cluster.
+const GlobalServiceName = "agent-collab-global"
+
 // DiscoveryService는 peer 발견 서비스입니다.
 type DiscoveryService struct {
-	host      host.Host
-	projectID string
+	host host.Host
 
 	// mDNS 서비스
 	mdnsService mdns.Service
@@ -55,10 +57,9 @@ func (n *DiscoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 }
 
 // NewDiscoveryService는 새 발견 서비스를 생성합니다.
-func NewDiscoveryService(h host.Host, projectID string) *DiscoveryService {
+func NewDiscoveryService(h host.Host) *DiscoveryService {
 	return &DiscoveryService{
-		host:      h,
-		projectID: projectID,
+		host: h,
 	}
 }
 
@@ -71,8 +72,8 @@ func (d *DiscoveryService) SetPeerFoundHandler(handler func(peer.AddrInfo)) {
 
 // StartMDNS는 mDNS 서비스를 시작합니다.
 func (d *DiscoveryService) StartMDNS(ctx context.Context) error {
-	// mDNS 서비스 이름 (프로젝트별)
-	serviceName := "agent-collab-" + d.projectID
+	// Use global service name for cluster-wide discovery
+	serviceName := GlobalServiceName
 
 	notifee := &DiscoveryNotifee{
 		h:           d.host,
